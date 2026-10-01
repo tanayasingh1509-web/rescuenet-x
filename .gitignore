@@ -1,0 +1,42 @@
+# Environment & Sensitive Credentials
+.env
+.env.local
+*.env
+!.env.example
+
+# Node / Dependencies
+node_modules/
+frontend/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Python Runtime & Bytecode
+__pycache__/
+backend/__pycache__/
+backend/routes/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+*.egg-info/
+.eggs/
+
+# Temporary Runtime Uploads
+backend/uploads/audio/*
+!backend/uploads/audio/.gitkeep
+backend/uploads/images/*
+!backend/uploads/images/.gitkeep
+backend/audio_samples/*
+!backend/audio_samples/.gitkeep
+
+# System & Editor Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
