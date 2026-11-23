@@ -11,6 +11,7 @@ Handles:
 
 from fastapi import APIRouter, Request, Response, Form, UploadFile, File, HTTPException, status
 from fastapi.responses import PlainTextResponse
+from starlette.concurrency import run_in_threadpool
 import os
 import time
 import requests
@@ -227,7 +228,8 @@ async def voice_process_audio(
         else:
             print(f"[SECURITY] Blocked SSRF attempt: RecordingUrl '{RecordingUrl}' host is not api.twilio.com over HTTPS.")
 
-    extracted = process_audio_transcript(temp_audio_path)
+    # Offload CPU/network intensive STT & parsing to background threadpool to prevent freezing WS loop
+    extracted = await run_in_threadpool(process_audio_transcript, temp_audio_path)
 
     sector_candidate = sector or extracted.get("sector_hint")
     ev_lat, ev_lng, sec_name, is_loc_unknown = resolve_voice_coordinates(

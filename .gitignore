@@ -41,6 +41,10 @@ Thumbs.db
 .vscode/
 .idea/
 
+*.db
+*.sqlite
+*.sqlite3
+
 cloudflared.exe
 
 tunnel_daemon.py

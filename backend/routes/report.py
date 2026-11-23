@@ -9,6 +9,7 @@ Handles:
 """
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 import shutil
 import uuid
 import os
@@ -51,8 +52,8 @@ async def report_visual(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to persist validated image artifact: {e}")
 
-    # Analyze image with Vision Engine
-    vision_result = analyze_visual_disaster(saved_path)
+    # Analyze image with Vision Engine in background worker thread to prevent freezing event loop
+    vision_result = await run_in_threadpool(analyze_visual_disaster, saved_path)
 
     is_loc_unknown = False
     if lat is not None and lng is not None:

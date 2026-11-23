@@ -7,6 +7,7 @@ Provides:
 """
 
 from fastapi import APIRouter, UploadFile, File, Form, Depends
+from starlette.concurrency import run_in_threadpool
 import os
 import wave
 import struct
@@ -86,10 +87,10 @@ async def simulate_voice(
     if audio:
         with open(sample_path, "wb") as f:
             f.write(await audio.read())
-        extracted = process_audio_transcript(sample_path)
+        extracted = await run_in_threadpool(process_audio_transcript, sample_path)
     elif scenario and scenario.lower() in SCENARIOS:
         sc = SCENARIOS[scenario.lower()]
-        generate_synthetic_pcm_wav(sample_path)
+        await run_in_threadpool(generate_synthetic_pcm_wav, sample_path)
         extracted = offline_heuristic_nlp_extractor(sc["text"])
         extracted["raw_transcript"] = sc["text"]
         extracted["category"] = sc["category"]
@@ -98,14 +99,14 @@ async def simulate_voice(
         extracted["confidence"] = 0.88
         extracted["verified"] = True
     elif transcript_text:
-        generate_synthetic_pcm_wav(sample_path)
+        await run_in_threadpool(generate_synthetic_pcm_wav, sample_path)
         extracted = offline_heuristic_nlp_extractor(transcript_text)
         extracted["raw_transcript"] = transcript_text
         extracted["confidence"] = 0.80
         extracted["verified"] = True
     else:
         sc = SCENARIOS["flood"]
-        generate_synthetic_pcm_wav(sample_path)
+        await run_in_threadpool(generate_synthetic_pcm_wav, sample_path)
         extracted = offline_heuristic_nlp_extractor(sc["text"])
         extracted["raw_transcript"] = sc["text"]
         extracted["category"] = sc["category"]
@@ -194,7 +195,6 @@ async def trigger_scenario(scenario_name: str):
 
 @router.post("/reset", dependencies=[Depends(verify_admin_token)])
 async def reset_store():
-    """Resets event store to baseline state for fresh demo runs."""
-    store._events.clear()
-    store._init_default_units()
+    """Resets event store and SQLite database to baseline state for fresh demo runs."""
+    store.reset()
     return {"status": "reset_successful"}
