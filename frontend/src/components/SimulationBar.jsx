@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Waves, HeartPulse, Flame, PhoneCall,
-  Camera, RotateCcw, Play, Upload, Check, Loader2, X, Terminal
+  Camera, RotateCcw, Play, Upload, Loader2, X, Terminal
 } from 'lucide-react';
 
 export default function SimulationBar({
@@ -203,7 +203,7 @@ export default function SimulationBar({
                   <div className="text-xs text-slate-300 font-semibold">
                     {selectedFile ? selectedFile.name : 'Click to select crisis photo'}
                   </div>
-                  <div className="text-[10px] text-slate-500">
+                  <div className="text-[10px] text-slate-400">
                     Supports JPG, PNG (YOLOv11 verification & 64-bit pHash deduplication)
                   </div>
                 </label>

@@ -1,15 +1,21 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Circle, Polyline } from 'react-leaflet';
 import L from 'leaflet';
-import mapboxgl from 'mapbox-gl';
-import { Layers, Activity, Radio, Crosshair, ChevronDown, ChevronUp, Send, Globe, Satellite } from 'lucide-react';
+import { ChevronDown, ChevronUp, Send, Globe, Satellite } from 'lucide-react';
 
-// Fix Leaflet default icon issues in bundlers
+// Fix Leaflet default icon issues offline using self-contained inline SVG data URIs
 delete L.Icon.Default.prototype._getIconUrl;
+const DEFAULT_MARKER_SVG = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="25" height="41" viewBox="0 0 25 41">
+    <path fill="#2563eb" stroke="#ffffff" stroke-width="1.5" d="M12.5 0C5.6 0 0 5.6 0 12.5c0 9.4 12.5 28.5 12.5 28.5S25 21.9 25 12.5C25 5.6 19.4 0 12.5 0z"/>
+    <circle cx="12.5" cy="12.5" r="5" fill="#ffffff"/>
+  </svg>
+`)}`;
+
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconRetinaUrl: DEFAULT_MARKER_SVG,
+  iconUrl: DEFAULT_MARKER_SVG,
+  shadowUrl: '',
 });
 
 // Precision Tactical Leaflet Marker for Incidents
@@ -189,7 +195,7 @@ const TACTICAL_DARK_STYLES = [
   }
 ];
 
-// Asynchronous loader for Google Maps JavaScript SDK
+// Asynchronous loader for Google Maps JavaScript SDK (No libraries=places)
 const loadGoogleMapsScript = (apiKey) => {
   return new Promise((resolve, reject) => {
     if (typeof window === 'undefined') return reject('No browser window');
@@ -219,29 +225,71 @@ export default function GISMap({
   selectedEvent,
   onSelectEvent,
   onDispatch,
-  googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
-  mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN || ''
+  googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
 }) {
-  const [mapEngine, setMapEngine] = useState(googleMapsApiKey ? 'google' : 'leaflet'); // 'google' | 'google-satellite' | 'leaflet' | 'mapbox'
+  const [mapEngine, setMapEngine] = useState(googleMapsApiKey ? 'google' : 'leaflet');
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [isLegendOpen, setIsLegendOpen] = useState(true);
   const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
 
   const googleContainerRef = useRef(null);
   const googleMapInstanceRef = useRef(null);
-  const googleMarkersRef = useRef([]);
-  const googleCirclesRef = useRef([]);
 
-  const mapboxContainerRef = useRef(null);
-  const mapboxInstanceRef = useRef(null);
-  const mapboxMarkersRef = useRef([]);
+  // Marker diffing maps to prevent flickering
+  const googleIncidentMarkersRef = useRef(new Map());
+  const googleUnitMarkersRef = useRef(new Map());
+  const googleCirclesRef = useRef(new Map());
+  const googlePolylinesRef = useRef(new Map());
 
-  const defaultCenter = [28.6139, 77.2090];
-  const center = selectedEvent && selectedEvent.coordinates
-    ? [selectedEvent.coordinates.lat, selectedEvent.coordinates.lng]
-    : defaultCenter;
+  const defaultCenter = useMemo(() => [28.6139, 77.2090], []);
+  const center = useMemo(() => {
+    if (selectedEvent && selectedEvent.coordinates && selectedEvent.coordinates.lat && selectedEvent.coordinates.lng) {
+      return [selectedEvent.coordinates.lat, selectedEvent.coordinates.lng];
+    }
+    return defaultCenter;
+  }, [selectedEvent, defaultCenter]);
 
-  // 1. Initialize Google Maps Engine
+  // Clean teardown for Google Maps
+  const teardownGoogleMap = useCallback(() => {
+    googleIncidentMarkersRef.current.forEach((m) => m.setMap(null));
+    googleIncidentMarkersRef.current.clear();
+
+    googleUnitMarkersRef.current.forEach((m) => m.setMap(null));
+    googleUnitMarkersRef.current.clear();
+
+    googleCirclesRef.current.forEach((c) => c.setMap(null));
+    googleCirclesRef.current.clear();
+
+    googlePolylinesRef.current.forEach((p) => p.setMap(null));
+    googlePolylinesRef.current.clear();
+
+    googleMapInstanceRef.current = null;
+    setGoogleMapsLoaded(false);
+
+    if (googleContainerRef.current) {
+      googleContainerRef.current.innerHTML = '';
+    }
+
+    const script = document.getElementById('google-maps-sdk');
+    if (script && script.parentNode) {
+      script.parentNode.removeChild(script);
+    }
+  }, []);
+
+  // Global handler for Google Maps authentication failures
+  useEffect(() => {
+    window.gm_authFailure = () => {
+      console.warn('Google Maps authentication failed (gm_authFailure). Falling back to Leaflet Carto Dark.');
+      teardownGoogleMap();
+      setMapEngine('leaflet');
+    };
+
+    return () => {
+      delete window.gm_authFailure;
+    };
+  }, [teardownGoogleMap]);
+
+  // Handle engine switching & Google Maps initialization
   useEffect(() => {
     if ((mapEngine === 'google' || mapEngine === 'google-satellite') && googleMapsApiKey) {
       loadGoogleMapsScript(googleMapsApiKey)
@@ -260,7 +308,6 @@ export default function GISMap({
             });
             googleMapInstanceRef.current = gMap;
           } else if (googleMapInstanceRef.current) {
-            // Update map type if already initialized
             const isSat = mapEngine === 'google-satellite';
             googleMapInstanceRef.current.setMapTypeId(isSat ? 'hybrid' : 'roadmap');
             googleMapInstanceRef.current.setOptions({
@@ -270,46 +317,35 @@ export default function GISMap({
         })
         .catch((err) => {
           console.warn('Google Maps load failed, falling back to Leaflet:', err);
+          teardownGoogleMap();
           setMapEngine('leaflet');
         });
+    } else if (mapEngine === 'leaflet') {
+      teardownGoogleMap();
     }
-  }, [mapEngine, googleMapsApiKey]);
+  }, [mapEngine, googleMapsApiKey, defaultCenter, teardownGoogleMap]);
 
-  // 2. Render Google Maps Markers and Hazard Circles
+  // Map of units by ID for quick lookup
+  const unitMap = useMemo(() => {
+    const map = new Map();
+    units.forEach((u) => map.set(u.id, u));
+    return map;
+  }, [units]);
+
+  // Diffing and updating Google Maps markers & polylines
   useEffect(() => {
     if (!googleMapInstanceRef.current || !window.google || !window.google.maps) return;
     const gMap = googleMapInstanceRef.current;
+    const gMaps = window.google.maps;
 
-    // Clear old Google markers and circles
-    googleMarkersRef.current.forEach(m => m.setMap(null));
-    googleMarkersRef.current = [];
-    googleCirclesRef.current.forEach(c => c.setMap(null));
-    googleCirclesRef.current = [];
-
-    // Render Hazard Zones (Circles)
-    if (showHeatmap) {
-      events.forEach(ev => {
-        if (!ev.coordinates || !ev.coordinates.lat || !ev.coordinates.lng) return;
-        const color = ev.severity >= 8 ? '#ef4444' : (ev.severity >= 5 ? '#f59e0b' : '#38bdf8');
-        const circle = new window.google.maps.Circle({
-          strokeColor: color,
-          strokeOpacity: 0.85,
-          strokeWeight: 1,
-          fillColor: color,
-          fillOpacity: 0.16,
-          map: gMap,
-          center: { lat: ev.coordinates.lat, lng: ev.coordinates.lng },
-          radius: ev.severity * 130
-        });
-        googleCirclesRef.current.push(circle);
-      });
-    }
-
-    // Render Incident Markers
-    events.forEach(ev => {
+    // 1. Diff Incident Markers
+    const currentEventIds = new Set();
+    events.forEach((ev) => {
       if (!ev.coordinates || !ev.coordinates.lat || !ev.coordinates.lng) return;
-      const color = ev.severity >= 8 ? '#ef4444' : (ev.severity >= 5 ? '#f59e0b' : '#38bdf8');
-      
+      currentEventIds.add(ev.id);
+      const pos = { lat: ev.coordinates.lat, lng: ev.coordinates.lng };
+      const color = ev.severity >= 8 ? '#ef4444' : ev.severity >= 5 ? '#f59e0b' : '#38bdf8';
+
       const svgMarker = {
         url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
           <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
@@ -317,27 +353,41 @@ export default function GISMap({
             <text x="14" y="18" fill="${color}" font-family="monospace, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">${ev.severity}</text>
           </svg>
         `)}`,
-        scaledSize: new window.google.maps.Size(28, 28),
-        anchor: new window.google.maps.Point(14, 14)
+        scaledSize: new gMaps.Size(28, 28),
+        anchor: new gMaps.Point(14, 14)
       };
 
-      const marker = new window.google.maps.Marker({
-        position: { lat: ev.coordinates.lat, lng: ev.coordinates.lng },
-        map: gMap,
-        icon: svgMarker,
-        title: `[SEV ${ev.severity}] ${ev.category} - ${ev.sector}`
-      });
-
-      marker.addListener('click', () => {
-        onSelectEvent(ev);
-      });
-
-      googleMarkersRef.current.push(marker);
+      if (googleIncidentMarkersRef.current.has(ev.id)) {
+        const marker = googleIncidentMarkersRef.current.get(ev.id);
+        marker.setPosition(pos);
+        marker.setIcon(svgMarker);
+        marker.setTitle(`[SEV ${ev.severity}] ${ev.category} - ${ev.sector}`);
+      } else {
+        const marker = new gMaps.Marker({
+          position: pos,
+          map: gMap,
+          icon: svgMarker,
+          title: `[SEV ${ev.severity}] ${ev.category} - ${ev.sector}`
+        });
+        marker.addListener('click', () => onSelectEvent(ev));
+        googleIncidentMarkersRef.current.set(ev.id, marker);
+      }
     });
 
-    // Render First Responder Fleet Units
-    units.forEach(u => {
+    // Remove deleted incident markers
+    googleIncidentMarkersRef.current.forEach((marker, id) => {
+      if (!currentEventIds.has(id)) {
+        marker.setMap(null);
+        googleIncidentMarkersRef.current.delete(id);
+      }
+    });
+
+    // 2. Diff Unit Fleet Markers
+    const currentUnitIds = new Set();
+    units.forEach((u) => {
       if (!u.lat || !u.lng) return;
+      currentUnitIds.add(u.id);
+      const pos = { lat: u.lat, lng: u.lng };
       const colorMap = {
         'RESCUE': '#2563eb',
         'AMBULANCE': '#059669',
@@ -360,24 +410,121 @@ export default function GISMap({
             <text x="17" y="14" fill="${color}" font-family="monospace, sans-serif" font-size="9" font-weight="bold" text-anchor="middle" letter-spacing="0.5">${label}</text>
           </svg>
         `)}`,
-        scaledSize: new window.google.maps.Size(34, 20),
-        anchor: new window.google.maps.Point(17, 10)
+        scaledSize: new gMaps.Size(34, 20),
+        anchor: new gMaps.Point(17, 10)
       };
 
-      const marker = new window.google.maps.Marker({
-        position: { lat: u.lat, lng: u.lng },
-        map: gMap,
-        icon: svgUnit,
-        title: `UNIT: ${u.name} (${u.unit_type})`
-      });
-
-      googleMarkersRef.current.push(marker);
+      if (googleUnitMarkersRef.current.has(u.id)) {
+        const marker = googleUnitMarkersRef.current.get(u.id);
+        marker.setPosition(pos);
+        marker.setIcon(svgUnit);
+        marker.setTitle(`UNIT: ${u.name} (${u.unit_type}) [${u.status}]`);
+      } else {
+        const marker = new gMaps.Marker({
+          position: pos,
+          map: gMap,
+          icon: svgUnit,
+          title: `UNIT: ${u.name} (${u.unit_type}) [${u.status}]`
+        });
+        googleUnitMarkersRef.current.set(u.id, marker);
+      }
     });
-  }, [events, units, showHeatmap, googleMapsLoaded, mapEngine, onSelectEvent]);
+
+    // Remove deleted unit markers
+    googleUnitMarkersRef.current.forEach((marker, id) => {
+      if (!currentUnitIds.has(id)) {
+        marker.setMap(null);
+        googleUnitMarkersRef.current.delete(id);
+      }
+    });
+
+    // 3. Diff Routing Polylines (Assigned Unit -> Incident)
+    const activeRouteIds = new Set();
+    events.forEach((ev) => {
+      if (!ev.coordinates || !ev.assigned_unit) return;
+      const assigned = unitMap.get(ev.assigned_unit.id) || ev.assigned_unit;
+      if (!assigned.lat || !assigned.lng) return;
+
+      const routeKey = `route_${ev.id}_${assigned.id}`;
+      activeRouteIds.add(routeKey);
+
+      const path = [
+        { lat: assigned.lat, lng: assigned.lng },
+        { lat: ev.coordinates.lat, lng: ev.coordinates.lng }
+      ];
+
+      if (googlePolylinesRef.current.has(routeKey)) {
+        const polyline = googlePolylinesRef.current.get(routeKey);
+        polyline.setPath(path);
+      } else {
+        const polyline = new gMaps.Polyline({
+          path,
+          geodesic: true,
+          strokeColor: '#38bdf8',
+          strokeOpacity: 0.85,
+          strokeWeight: 2.5,
+          map: gMap
+        });
+        googlePolylinesRef.current.set(routeKey, polyline);
+      }
+    });
+
+    // Remove obsolete polylines
+    googlePolylinesRef.current.forEach((polyline, id) => {
+      if (!activeRouteIds.has(id)) {
+        polyline.setMap(null);
+        googlePolylinesRef.current.delete(id);
+      }
+    });
+
+    // 4. Diff Hazard Zone Circles
+    const activeCircleIds = new Set();
+    if (showHeatmap) {
+      events.forEach((ev) => {
+        if (!ev.coordinates || !ev.coordinates.lat || !ev.coordinates.lng) return;
+        activeCircleIds.add(ev.id);
+        const color = ev.severity >= 8 ? '#ef4444' : ev.severity >= 5 ? '#f59e0b' : '#38bdf8';
+        const centerPos = { lat: ev.coordinates.lat, lng: ev.coordinates.lng };
+        const radius = ev.severity * 130;
+
+        if (googleCirclesRef.current.has(ev.id)) {
+          const circle = googleCirclesRef.current.get(ev.id);
+          circle.setCenter(centerPos);
+          circle.setRadius(radius);
+          circle.setOptions({ strokeColor: color, fillColor: color });
+        } else {
+          const circle = new gMaps.Circle({
+            strokeColor: color,
+            strokeOpacity: 0.85,
+            strokeWeight: 1,
+            fillColor: color,
+            fillOpacity: 0.16,
+            map: gMap,
+            center: centerPos,
+            radius: radius
+          });
+          googleCirclesRef.current.set(ev.id, circle);
+        }
+      });
+    }
+
+    // Clean up disabled or deleted circles
+    googleCirclesRef.current.forEach((circle, id) => {
+      if (!activeCircleIds.has(id)) {
+        circle.setMap(null);
+        googleCirclesRef.current.delete(id);
+      }
+    });
+  }, [events, units, showHeatmap, googleMapsLoaded, mapEngine, onSelectEvent, unitMap]);
 
   // Recenter Google Map when selectedEvent changes
   useEffect(() => {
-    if ((mapEngine === 'google' || mapEngine === 'google-satellite') && googleMapInstanceRef.current && selectedEvent && selectedEvent.coordinates) {
+    if (
+      (mapEngine === 'google' || mapEngine === 'google-satellite') &&
+      googleMapInstanceRef.current &&
+      selectedEvent &&
+      selectedEvent.coordinates
+    ) {
       googleMapInstanceRef.current.panTo({
         lat: selectedEvent.coordinates.lat,
         lng: selectedEvent.coordinates.lng
@@ -386,63 +533,8 @@ export default function GISMap({
     }
   }, [selectedEvent, mapEngine]);
 
-  // 3. Initialize Mapbox if selected and token is available
-  useEffect(() => {
-    if (mapEngine === 'mapbox' && mapboxToken) {
-      try {
-        mapboxgl.accessToken = mapboxToken;
-        const mb = new mapboxgl.Map({
-          container: mapboxContainerRef.current,
-          style: 'mapbox://styles/mapbox/dark-v11',
-          center: [defaultCenter[1], defaultCenter[0]],
-          zoom: 13
-        });
-
-        mb.addControl(new mapboxgl.NavigationControl(), 'top-right');
-        mapboxInstanceRef.current = mb;
-
-        return () => {
-          mb.remove();
-        };
-      } catch (err) {
-        console.warn('Mapbox initialization failed, falling back to Leaflet:', err);
-        setMapEngine('leaflet');
-      }
-    }
-  }, [mapEngine, mapboxToken]);
-
-  // Update Mapbox markers when events change
-  useEffect(() => {
-    if (mapEngine === 'mapbox' && mapboxInstanceRef.current) {
-      mapboxMarkersRef.current.forEach(m => m.remove());
-      mapboxMarkersRef.current = [];
-
-      events.forEach(ev => {
-        if (!ev.coordinates) return;
-        const el = document.createElement('div');
-        el.className = 'radar-ping';
-        const color = ev.severity >= 8 ? '#ef4444' : (ev.severity >= 5 ? '#f59e0b' : '#38bdf8');
-        el.innerHTML = `
-          <div style="
-            width: 22px; height: 22px; border-radius: 50%;
-            background: #090e17; border: 2px solid ${color};
-            color: ${color}; display: flex; align-items: center;
-            justify-content: center; font-weight: bold; font-size: 11px;
-            box-shadow: 0 0 6px ${color}; cursor: pointer;
-          ">${ev.severity}</div>
-        `;
-        el.addEventListener('click', () => onSelectEvent(ev));
-
-        const marker = new mapboxgl.Marker(el)
-          .setLngLat([ev.coordinates.lng, ev.coordinates.lat])
-          .addTo(mapboxInstanceRef.current);
-        mapboxMarkersRef.current.push(marker);
-      });
-    }
-  }, [events, mapEngine, onSelectEvent]);
-
   return (
-    <div className="relative w-full h-full rounded border border-[#1b2638] overflow-hidden bg-[#090d16] select-none">
+    <div className="relative w-full h-full rounded border border-[#1b2638] overflow-hidden bg-[#090d16]">
       {/* Precision Map Toolbar (Top-Left) */}
       <div className="absolute top-3 left-3 z-[1000] flex items-center space-x-1.5 bg-[#0d1422] border border-[#1e2a3e] px-2 py-1.5 rounded text-xs shadow-lg">
         <span className="text-[10px] text-slate-400 font-mono uppercase tracking-wider pr-1 border-r border-[#1f2b3e] flex items-center space-x-1">
@@ -465,6 +557,7 @@ export default function GISMap({
               : 'text-slate-400 hover:text-slate-200'
           }`}
           title="Google Maps Tactical Dark (Active Projection)"
+          aria-label="Switch to Google Maps Dark engine"
         >
           <span className={`w-1.5 h-1.5 rounded-full ${googleMapsApiKey ? 'bg-emerald-400' : 'bg-slate-500'}`} />
           <span>Google Dark</span>
@@ -485,6 +578,7 @@ export default function GISMap({
               : 'text-slate-400 hover:text-slate-200'
           }`}
           title="Google Maps Aerial Satellite Imagery"
+          aria-label="Switch to Google Maps Satellite engine"
         >
           <Satellite className="w-3 h-3 text-sky-400" />
           <span>Satellite</span>
@@ -499,26 +593,9 @@ export default function GISMap({
               : 'text-slate-400 hover:text-slate-200'
           }`}
           title="OpenStreetMap / CARTO Offline Fallback"
+          aria-label="Switch to Carto Dark Leaflet engine"
         >
           Carto Dark
-        </button>
-
-        {/* Mapbox Vector */}
-        <button
-          onClick={() => {
-            if (!mapboxToken) {
-              alert('Notice: Mapbox access token not set. Running on Google Maps or Carto Dark.');
-            } else {
-              setMapEngine('mapbox');
-            }
-          }}
-          className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-            mapEngine === 'mapbox'
-              ? 'bg-[#1b2638] text-white font-bold border border-[#2d3e5a]'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          Mapbox
         </button>
 
         <span className="w-px h-3 bg-[#1f2b3e]" />
@@ -532,6 +609,7 @@ export default function GISMap({
               : 'text-slate-400 hover:text-slate-200 bg-[#121a28]'
           }`}
           title="Toggle Hazard Density Overlay"
+          aria-label="Toggle Hazard Density Overlay"
         >
           <span className={`w-1.5 h-1.5 rounded-full ${showHeatmap ? 'bg-rose-400' : 'bg-slate-500'}`} />
           <span>Hazard Radius: {showHeatmap ? 'ON' : 'OFF'}</span>
@@ -539,10 +617,8 @@ export default function GISMap({
       </div>
 
       {/* Map Rendering Container */}
-      {(mapEngine === 'google' || mapEngine === 'google-satellite') ? (
+      {mapEngine === 'google' || mapEngine === 'google-satellite' ? (
         <div ref={googleContainerRef} className="w-full h-full bg-[#090d16]" />
-      ) : mapEngine === 'mapbox' ? (
-        <div ref={mapboxContainerRef} className="w-full h-full" />
       ) : (
         <MapContainer
           center={defaultCenter}
@@ -551,6 +627,7 @@ export default function GISMap({
           zoomControl={false}
         >
           <ChangeView center={center} zoom={selectedEvent ? 14 : 13} />
+
           {/* CartoDB Dark Tactical Tiles */}
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>'
@@ -558,21 +635,45 @@ export default function GISMap({
           />
 
           {/* Crisis Hazard Heatmap Zones */}
-          {showHeatmap && events.map((ev) => {
-            if (!ev.coordinates || !ev.coordinates.lat || !ev.coordinates.lng) return null;
-            const isCritical = ev.severity >= 8;
-            const heatColor = isCritical ? '#ef4444' : (ev.severity >= 5 ? '#f59e0b' : '#38bdf8');
+          {showHeatmap &&
+            events.map((ev) => {
+              if (!ev.coordinates || !ev.coordinates.lat || !ev.coordinates.lng) return null;
+              const isCritical = ev.severity >= 8;
+              const heatColor = isCritical ? '#ef4444' : ev.severity >= 5 ? '#f59e0b' : '#38bdf8';
+              return (
+                <Circle
+                  key={`heat-${ev.id}`}
+                  center={[ev.coordinates.lat, ev.coordinates.lng]}
+                  radius={ev.severity * 130}
+                  pathOptions={{
+                    fillColor: heatColor,
+                    fillOpacity: 0.16,
+                    color: heatColor,
+                    weight: 1,
+                    dashArray: '4, 4'
+                  }}
+                />
+              );
+            })}
+
+          {/* Visual Tactical Routing Lines (Assigned Unit -> Incident) */}
+          {events.map((ev) => {
+            if (!ev.coordinates || !ev.assigned_unit) return null;
+            const assigned = unitMap.get(ev.assigned_unit.id) || ev.assigned_unit;
+            if (!assigned.lat || !assigned.lng) return null;
+
             return (
-              <Circle
-                key={`heat-${ev.id}`}
-                center={[ev.coordinates.lat, ev.coordinates.lng]}
-                radius={ev.severity * 130}
+              <Polyline
+                key={`route-${ev.id}-${assigned.id}`}
+                positions={[
+                  [assigned.lat, assigned.lng],
+                  [ev.coordinates.lat, ev.coordinates.lng]
+                ]}
                 pathOptions={{
-                  fillColor: heatColor,
-                  fillOpacity: 0.16,
-                  color: heatColor,
-                  weight: 1,
-                  dashArray: '4, 4'
+                  color: '#38bdf8',
+                  weight: 2.5,
+                  dashArray: '6, 6',
+                  opacity: 0.85
                 }}
               />
             );
@@ -587,7 +688,7 @@ export default function GISMap({
                 position={[ev.coordinates.lat, ev.coordinates.lng]}
                 icon={createSeverityLeafletIcon(ev.category, ev.severity)}
                 eventHandlers={{
-                  click: () => onSelectEvent(ev),
+                  click: () => onSelectEvent(ev)
                 }}
               >
                 <Popup>
@@ -613,6 +714,7 @@ export default function GISMap({
                       <button
                         onClick={() => onDispatch(ev.id)}
                         className="bg-rose-700 hover:bg-rose-600 text-white px-2 py-0.5 rounded font-bold transition flex items-center space-x-1"
+                        aria-label={`Dispatch unit to incident ${ev.id}`}
                       >
                         <Send className="w-2.5 h-2.5" />
                         <span>Dispatch</span>
@@ -649,13 +751,20 @@ export default function GISMap({
         <div
           onClick={() => setIsLegendOpen(!isLegendOpen)}
           className="flex items-center justify-between px-2.5 py-1.5 cursor-pointer font-semibold text-xs text-slate-200 border-b border-[#1b2638]"
+          role="button"
+          tabIndex={0}
+          aria-expanded={isLegendOpen}
+          aria-label="Toggle Tactical Map Legend"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') setIsLegendOpen(!isLegendOpen);
+          }}
         >
           <span className="text-[10px] uppercase tracking-wider font-mono text-slate-400">Map Legend</span>
           {isLegendOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronUp className="w-3.5 h-3.5 text-slate-400" />}
         </div>
 
         {isLegendOpen && (
-          <div className="p-2.5 space-y-1.5 font-mono text-[10px]">
+          <div className="p-2.5 space-y-1.5 font-mono text-[10px] select-text">
             <div className="flex items-center space-x-2">
               <span className="w-2 h-2 rounded-full bg-rose-500"></span>
               <span>Priority 1 (Sev 8-10)</span>
@@ -671,6 +780,10 @@ export default function GISMap({
             <div className="flex items-center space-x-2 pt-1 border-t border-[#1b2638]">
               <span className="w-3 h-2 rounded bg-[#0a101d] border border-blue-500"></span>
               <span>CAD Units (RES/EMS/FIR)</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="w-4 h-0.5 border-t border-dashed border-sky-400"></span>
+              <span>Dispatch Vector (Unit &rarr; Scene)</span>
             </div>
           </div>
         )}

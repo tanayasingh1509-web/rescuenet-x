@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import {
   Flame, Waves, HeartPulse, ShieldAlert, LifeBuoy,
-  Phone, Camera, Smartphone, CheckCircle2, Clock,
-  Filter, Search, AlertCircle, Send, ArrowUpRight
+  Phone, Camera, Smartphone, CheckCircle2,
+  Search, AlertCircle, Send
 } from 'lucide-react';
 
 export default function IncidentFeed({
@@ -67,7 +67,7 @@ export default function IncidentFeed({
   });
 
   return (
-    <aside className="w-full lg:w-96 flex flex-col h-full bg-[#0d121c] border-r border-[#1c2738] text-slate-100 overflow-hidden select-none">
+    <aside className="w-full lg:w-96 flex flex-col h-full bg-[#0d121c] border-r border-[#1c2738] text-slate-100 overflow-hidden">
       {/* Search & Filter Header */}
       <div className="p-3 border-b border-[#1c2738] bg-[#090d15] space-y-2">
         <div className="flex items-center justify-between">
@@ -93,13 +93,14 @@ export default function IncidentFeed({
 
         {/* Search Input */}
         <div className="relative">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
           <input
             type="text"
             placeholder="Filter sector, summary, or ID..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 bg-[#121826] border border-[#223045] rounded text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
+            className="w-full pl-8 pr-3 py-1.5 bg-[#121826] border border-[#223045] rounded text-xs text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500 transition select-text"
+            aria-label="Filter incidents by sector, summary, or ID"
           />
         </div>
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-  X, Key, CheckCircle2, AlertTriangle, Eye, EyeOff,
-  ExternalLink, Loader2, Save, ShieldCheck, Sparkles, Radio
+  X, Key, CheckCircle2, Eye, EyeOff,
+  ExternalLink, Loader2, Save, ShieldCheck
 } from 'lucide-react';
 import { authFetch } from '../utils/auth';
 
@@ -71,7 +71,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
       } else {
         setGeminiTestStatus({ status: 'error', message: data.detail || 'Authentication failed. Please verify API key.' });
       }
-    } catch (e) {
+    } catch {
       setGeminiTestStatus({ status: 'error', message: 'Test failed: Backend unreachable.' });
     } finally {
       setIsTestingGemini(false);
@@ -100,12 +100,6 @@ export default function ApiKeyModal({ isOpen, onClose }) {
       const data = await res.json();
       if (data.status === 'success') {
         setSaveSuccess(true);
-        if (payload.google_maps_api_key) {
-          localStorage.setItem('GOOGLE_MAPS_API_KEY', payload.google_maps_api_key);
-        }
-        if (payload.mapbox_token) {
-          localStorage.setItem('MAPBOX_ACCESS_TOKEN', payload.mapbox_token);
-        }
       }
     } catch (err) {
       console.error('Failed to save API keys:', err);
@@ -123,7 +117,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
       aria-labelledby="api-key-modal-title"
       className="fixed inset-0 z-[5000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
     >
-      <div className="bg-[#0c121e] border border-[#25354e] w-full max-w-xl rounded shadow-2xl overflow-hidden flex flex-col max-h-[90vh] text-slate-100 select-none">
+      <div className="bg-[#0c121e] border border-[#25354e] w-full max-w-xl rounded shadow-2xl overflow-hidden flex flex-col max-h-[90vh] text-slate-100">
         {/* Header */}
         <div className="bg-[#090d16] p-3.5 border-b border-[#1f2b3e] flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
@@ -145,7 +139,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
 
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white p-1 rounded hover:bg-[#162030] transition"
+            className="text-slate-400 hover:text-white p-1 rounded hover:bg-[#162030] transition focus-visible:ring-2 focus-visible:ring-blue-500"
             aria-label="Close API Key Configuration"
           >
             <X className="w-4 h-4" />
@@ -156,7 +150,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
         <form onSubmit={handleSave} className="p-4 overflow-y-auto space-y-4 text-xs">
           {/* Success Banner */}
           {saveSuccess && (
-            <div className="bg-[#032e22] border border-emerald-700 p-2.5 rounded flex items-center space-x-2 text-emerald-300 font-mono text-[11px] animate-fade-in">
+            <div role="alert" className="bg-[#032e22] border border-emerald-700 p-2.5 rounded flex items-center space-x-2 text-emerald-300 font-mono text-[11px] animate-fade-in">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>API credentials safely saved to environment (.env) and active runtime.</span>
             </div>
@@ -183,7 +177,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
             </div>
 
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              Enables high-accuracy cloud crisis intelligence parsing using Gemini 1.5 Flash. If left empty, the engine uses local Ollama Llama-3 or offline heuristic parsing.
+              Enables high-accuracy cloud crisis intelligence parsing using Gemini models. If left empty, the engine uses local Ollama or offline heuristic parsing.
             </p>
 
             <div className="flex items-center space-x-1.5">
@@ -193,12 +187,14 @@ export default function ApiKeyModal({ isOpen, onClose }) {
                   value={geminiKey}
                   onChange={(e) => setGeminiKey(e.target.value)}
                   placeholder="Enter Gemini API key..."
-                  className="w-full pl-2.5 pr-8 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 font-mono"
+                  className="w-full pl-2.5 pr-8 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-mono"
+                  aria-label="Google Gemini API Key"
                 />
                 <button
                   type="button"
                   onClick={() => setShowGeminiKey(!showGeminiKey)}
-                  className="absolute right-2.5 top-2 text-slate-500 hover:text-slate-300"
+                  className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-300"
+                  aria-label="Toggle Gemini API Key Visibility"
                 >
                   {showGeminiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </button>
@@ -209,6 +205,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
                 onClick={handleTestGemini}
                 disabled={isTestingGemini || (!geminiKey && !maskedStatuses?.gemini?.configured)}
                 className="px-2.5 py-1.5 rounded bg-[#162235] hover:bg-[#1f2f49] border border-[#2a3d5c] text-sky-300 font-medium text-[11px] transition flex items-center space-x-1 disabled:opacity-40"
+                aria-label="Test Google Gemini API Key"
               >
                 {isTestingGemini ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
                 <span>Test Key</span>
@@ -216,7 +213,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
             </div>
 
             {geminiTestStatus && (
-              <div className={`p-2 rounded font-mono text-[10px] ${
+              <div role="alert" className={`p-2 rounded font-mono text-[10px] ${
                 geminiTestStatus.status === 'success'
                   ? 'bg-[#032e22] text-emerald-300 border border-emerald-800'
                   : 'bg-[#38090f] text-rose-300 border border-rose-800'
@@ -226,7 +223,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
             )}
           </div>
 
-          {/* 2. Google Maps API Key (Active Projection) */}
+          {/* 2. Google Maps API Key */}
           <div className="bg-[#101726] border border-[#1e2a3c] rounded p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-1.5">
@@ -247,7 +244,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
             </div>
 
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              Powers high-fidelity Google Maps Tactical Dark vector and Satellite projections with Places library integration for CAD emergency dispatch.
+              Powers Google Maps Tactical Dark vector and Satellite projections for CAD emergency dispatch.
             </p>
 
             <div className="relative">
@@ -256,12 +253,14 @@ export default function ApiKeyModal({ isOpen, onClose }) {
                 value={googleMapsKey}
                 onChange={(e) => setGoogleMapsKey(e.target.value)}
                 placeholder="Enter Google Maps API key..."
-                className="w-full pl-2.5 pr-8 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 font-mono"
+                className="w-full pl-2.5 pr-8 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-mono"
+                aria-label="Google Maps API Key"
               />
               <button
                 type="button"
                 onClick={() => setShowGoogleMapsKey(!showGoogleMapsKey)}
-                className="absolute right-2.5 top-2 text-slate-500 hover:text-slate-300"
+                className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-300"
+                aria-label="Toggle Google Maps API Key Visibility"
               >
                 {showGoogleMapsKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
@@ -289,7 +288,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
             </div>
 
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              Enables high-resolution Mapbox GL JS dark vector mapping. If left empty, the platform automatically runs on local Carto Dark / OpenStreetMap tiles.
+              Enables Mapbox dark vector mapping. If left empty, the platform automatically runs on local Carto Dark / OpenStreetMap tiles.
             </p>
 
             <div className="relative">
@@ -298,12 +297,14 @@ export default function ApiKeyModal({ isOpen, onClose }) {
                 value={mapboxToken}
                 onChange={(e) => setMapboxToken(e.target.value)}
                 placeholder="Enter Mapbox public token..."
-                className="w-full pl-2.5 pr-8 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 font-mono"
+                className="w-full pl-2.5 pr-8 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-mono"
+                aria-label="Mapbox Public Token"
               />
               <button
                 type="button"
                 onClick={() => setShowMapboxToken(!showMapboxToken)}
-                className="absolute right-2.5 top-2 text-slate-500 hover:text-slate-300"
+                className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-300"
+                aria-label="Toggle Mapbox Token Visibility"
               >
                 {showMapboxToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
@@ -336,30 +337,33 @@ export default function ApiKeyModal({ isOpen, onClose }) {
 
             <div className="space-y-1.5">
               <div>
-                <label className="text-[10px] text-slate-500 font-mono block">TWILIO_ACCOUNT_SID</label>
+                <label className="text-[10px] text-slate-400 font-mono block">TWILIO_ACCOUNT_SID</label>
                 <input
                   type="text"
                   value={twilioSid}
                   onChange={(e) => setTwilioSid(e.target.value)}
                   placeholder="AC..."
-                  className="w-full px-2.5 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 font-mono"
+                  className="w-full px-2.5 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-mono"
+                  aria-label="Twilio Account SID"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] text-slate-500 font-mono block">TWILIO_AUTH_TOKEN</label>
+                <label className="text-[10px] text-slate-400 font-mono block">TWILIO_AUTH_TOKEN</label>
                 <div className="relative">
                   <input
                     type={showTwilioToken ? 'text' : 'password'}
                     value={twilioToken}
                     onChange={(e) => setTwilioToken(e.target.value)}
                     placeholder="Enter auth token..."
-                    className="w-full pl-2.5 pr-8 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 font-mono"
+                    className="w-full pl-2.5 pr-8 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-mono"
+                    aria-label="Twilio Auth Token"
                   />
                   <button
                     type="button"
                     onClick={() => setShowTwilioToken(!showTwilioToken)}
-                    className="absolute right-2.5 top-2 text-slate-500 hover:text-slate-300"
+                    className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-300"
+                    aria-label="Toggle Twilio Auth Token Visibility"
                   >
                     {showTwilioToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
@@ -367,13 +371,14 @@ export default function ApiKeyModal({ isOpen, onClose }) {
               </div>
 
               <div>
-                <label className="text-[10px] text-slate-500 font-mono block">TWILIO_PHONE_NUMBER</label>
+                <label className="text-[10px] text-slate-400 font-mono block">TWILIO_PHONE_NUMBER</label>
                 <input
                   type="text"
                   value={twilioPhone}
                   onChange={(e) => setTwilioPhone(e.target.value)}
                   placeholder="+1..."
-                  className="w-full px-2.5 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 font-mono"
+                  className="w-full px-2.5 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-mono"
+                  aria-label="Twilio Phone Number"
                 />
               </div>
             </div>
@@ -381,7 +386,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
 
           {/* Action Buttons */}
           <div className="flex items-center justify-between pt-2 border-t border-[#1b2537]">
-            <span className="text-[10px] text-slate-500 font-mono">
+            <span className="text-[10px] text-slate-400 font-mono">
               Saved directly to local .env configuration
             </span>
 

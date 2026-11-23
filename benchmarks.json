@@ -1,0 +1,28 @@
+{
+  "benchmark_timestamp": "2026-11-23T08:44:10Z",
+  "environment": {
+    "os": "Windows",
+    "python": "3.13.7",
+    "architecture": "AMD64"
+  },
+  "routing": {
+    "avg_ms": 13.67,
+    "min_ms": 10.78,
+    "p95_ms": 16.162,
+    "iterations": 15
+  },
+  "vision": {
+    "avg_ms": 57.71,
+    "min_ms": 53.21,
+    "p95_ms": 62.31,
+    "iterations": 5,
+    "detected_category": "FIRE"
+  },
+  "stt": {
+    "sample_duration_s": 3.0,
+    "avg_ms": 1593.47,
+    "p95_ms": 3605.43,
+    "iterations": 3,
+    "transcript_preview": ""
+  }
+}

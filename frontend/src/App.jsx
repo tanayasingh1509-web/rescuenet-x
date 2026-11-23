@@ -10,16 +10,32 @@ import PitchDeckModal from './components/PitchDeckModal';
 import ResponderTerminalModal from './components/ResponderTerminalModal';
 import ApiKeyModal from './components/ApiKeyModal';
 import { authFetch } from './utils/auth';
+import { WifiOff } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
-const WS_URL = import.meta.env.VITE_WS_URL || (typeof window !== 'undefined' 
-  ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws` 
+const WS_URL = import.meta.env.VITE_WS_URL || (typeof window !== 'undefined'
+  ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
   : 'ws://localhost:8000/ws');
 
-// Pure Web Audio API tactical crisis beep
+// Single shared AudioContext singleton to prevent "more than 6 AudioContexts" browser warnings
+let sharedAudioContext = null;
+const getSharedAudioContext = () => {
+  if (typeof window === 'undefined') return null;
+  if (!sharedAudioContext) {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) sharedAudioContext = new AudioCtx();
+  }
+  if (sharedAudioContext && sharedAudioContext.state === 'suspended') {
+    sharedAudioContext.resume().catch(() => {});
+  }
+  return sharedAudioContext;
+};
+
+// Pure Web Audio API tactical crisis beep using shared context
 const playTacticalBeep = (freq = 880, duration = 0.15) => {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'sine';
@@ -30,52 +46,107 @@ const playTacticalBeep = (freq = 880, duration = 0.15) => {
     gain.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + duration);
-  } catch (e) {
+  } catch {
     // Audio context may require user gesture on first interaction
   }
 };
 
 export default function App() {
-  const [currentView, setCurrentView] = useState('command'); // 'command' | 'citizen'
+  // Hash-based routing (#/command, #/citizen)
+  const getInitialView = () => {
+    if (typeof window !== 'undefined' && window.location.hash === '#/citizen') {
+      return 'citizen';
+    }
+    return 'command';
+  };
+
+  const [currentView, setCurrentView] = useState(getInitialView);
   const [events, setEvents] = useState([]);
   const [units, setUnits] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [wsConnected, setWsConnected] = useState(false);
-  const [latencyMs, setLatencyMs] = useState(38);
+  const [wsReconnectCountdown, setWsReconnectCountdown] = useState(0);
+  const [latencyMs, setLatencyMs] = useState(0);
+
   const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
   const [isPitchDeckOpen, setIsPitchDeckOpen] = useState(false);
   const [isResponderModalOpen, setIsResponderModalOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+
   const wsRef = useRef(null);
   const pingIntervalRef = useRef(null);
+  const pingStartTimeRef = useRef(0);
+  const reconnectTimeoutRef = useRef(null);
+  const reconnectIntervalTimerRef = useRef(null);
+  const backoffDelayRef = useRef(1000); // 1s -> 2s -> 4s ... max 15s
+  const connectWsRef = useRef(null);
 
-  // Initialize WebSocket Connection (FR-3.1 Real-Time Streaming)
+  // Synchronize hash routing with currentView
+  const navigateView = (view) => {
+    setCurrentView(view);
+    if (typeof window !== 'undefined') {
+      window.location.hash = view === 'citizen' ? '#/citizen' : '#/command';
+    }
+  };
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (hash === '#/citizen') {
+        setCurrentView('citizen');
+      } else {
+        setCurrentView('command');
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Initialize WebSocket Connection with Exponential Backoff
   const connectWebSocket = useCallback(() => {
+    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+    if (reconnectIntervalTimerRef.current) clearInterval(reconnectIntervalTimerRef.current);
+
     try {
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log('[RESCUENET-X WS] Connected to backend stream');
+        console.log('[RESCUENET-X WS] Connected to backend telemetry stream');
         setWsConnected(true);
+        setWsReconnectCountdown(0);
+        backoffDelayRef.current = 1000; // Reset exponential backoff on successful connect
 
-        // Periodic ping for keepalive and latency measurement
+        // Periodic ping for keepalive and real latency roundtrip measurement
+        if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
         pingIntervalRef.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
-            const start = performance.now();
+            pingStartTimeRef.current = performance.now();
             ws.send('ping');
-            setLatencyMs(Math.round(performance.now() - start + 25));
           }
-        }, 8000);
+        }, 5000);
       };
 
       ws.onmessage = (messageEvent) => {
         try {
-          if (messageEvent.data === 'pong') return;
+          // Check for plain pong or json pong
+          if (messageEvent.data === 'pong') {
+            if (pingStartTimeRef.current > 0) {
+              const rtt = Math.max(1, Math.round(performance.now() - pingStartTimeRef.current));
+              setLatencyMs(rtt);
+            }
+            return;
+          }
 
           const data = JSON.parse(messageEvent.data);
 
-          if (data.type === 'INITIAL_STATE') {
+          if (data.type === 'pong') {
+            if (pingStartTimeRef.current > 0) {
+              const rtt = Math.max(1, Math.round(performance.now() - pingStartTimeRef.current));
+              setLatencyMs(rtt);
+            }
+          } else if (data.type === 'INITIAL_STATE') {
             if (data.events) setEvents(data.events);
             if (data.units) setUnits(data.units);
           } else if (data.type === 'INCIDENT_UPDATE') {
@@ -92,8 +163,12 @@ export default function App() {
               return [newEvent, ...prev];
             });
 
-            // If selected event was updated
             setSelectedEvent((prev) => (prev && prev.id === newEvent.id ? newEvent : prev));
+          } else if (data.type === 'UNIT_UPDATE') {
+            const updatedUnit = data.payload;
+            setUnits((prev) =>
+              prev.map((u) => (u.id === updatedUnit.id ? updatedUnit : u))
+            );
           } else if (data.type === 'DISPATCH_CONFIRMED') {
             setEvents((prev) =>
               prev.map((e) =>
@@ -102,6 +177,11 @@ export default function App() {
                   : e
               )
             );
+            if (data.unit) {
+              setUnits((prev) =>
+                prev.map((u) => (u.id === data.unit.id ? data.unit : u))
+              );
+            }
           }
         } catch (err) {
           console.error('[WS Parse Error]:', err);
@@ -109,10 +189,27 @@ export default function App() {
       };
 
       ws.onclose = () => {
-        console.log('[RESCUENET-X WS] Disconnected. Retrying in 3s...');
         setWsConnected(false);
         if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-        setTimeout(connectWebSocket, 3000);
+
+        const currentDelay = backoffDelayRef.current;
+        const nextDelay = Math.min(currentDelay * 2, 15000);
+        backoffDelayRef.current = nextDelay;
+
+        let secondsRemaining = Math.ceil(currentDelay / 1000);
+        setWsReconnectCountdown(secondsRemaining);
+
+        reconnectIntervalTimerRef.current = setInterval(() => {
+          secondsRemaining -= 1;
+          setWsReconnectCountdown((prev) => Math.max(0, prev - 1));
+          if (secondsRemaining <= 0) {
+            clearInterval(reconnectIntervalTimerRef.current);
+          }
+        }, 1000);
+
+        reconnectTimeoutRef.current = setTimeout(() => {
+          connectWsRef.current?.();
+        }, currentDelay);
       };
 
       ws.onerror = (err) => {
@@ -121,9 +218,15 @@ export default function App() {
       };
     } catch (e) {
       console.error('[WS Init Error]:', e);
-      setTimeout(connectWebSocket, 4000);
+      reconnectTimeoutRef.current = setTimeout(() => {
+        connectWsRef.current?.();
+      }, 3000);
     }
   }, []);
+
+  useEffect(() => {
+    connectWsRef.current = connectWebSocket;
+  }, [connectWebSocket]);
 
   useEffect(() => {
     // Initial REST state fetch
@@ -146,10 +249,12 @@ export default function App() {
     return () => {
       if (wsRef.current) wsRef.current.close();
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      if (reconnectIntervalTimerRef.current) clearInterval(reconnectIntervalTimerRef.current);
     };
   }, [connectWebSocket]);
 
-  // FR-3.3: 1-Click Dispatch Action
+  // 1-Click Dispatch Action
   const handleDispatch = async (eventId) => {
     playTacticalBeep(1100, 0.2);
     try {
@@ -180,7 +285,7 @@ export default function App() {
     }
   };
 
-  // Resolve Incident Action (frees assigned unit)
+  // Resolve Incident Action (frees assigned unit back to AVAILABLE)
   const handleResolve = async (eventId) => {
     try {
       const response = await authFetch(`${API_BASE}/api/events/${eventId}/resolve`, {
@@ -200,7 +305,7 @@ export default function App() {
     }
   };
 
-  // Trigger Demo Disaster Scenario (Flood, Medical, Fire)
+  // Trigger Demo Disaster Scenario
   const handleTriggerScenario = async (scenarioName) => {
     try {
       const res = await fetch(`${API_BASE}/api/simulate/scenario/${scenarioName}`, {
@@ -233,7 +338,7 @@ export default function App() {
     }
   };
 
-  // Upload Visual Incident Photo (YOLO & pHash)
+  // Upload Visual Incident Photo
   const handleUploadImage = async (file) => {
     try {
       const formData = new FormData();
@@ -258,7 +363,6 @@ export default function App() {
       await authFetch(`${API_BASE}/api/simulate/reset`, { method: 'POST' });
       setEvents([]);
       setSelectedEvent(null);
-      // Reload baseline
       const resUn = await fetch(`${API_BASE}/api/units`).then((r) => r.json());
       if (resUn.units) setUnits(resUn.units);
     } catch (e) {
@@ -267,18 +371,39 @@ export default function App() {
   };
 
   if (currentView === 'citizen') {
-    return <CitizenPortal onBackToCommand={() => setCurrentView('command')} />;
+    return <CitizenPortal onBackToCommand={() => navigateView('command')} />;
   }
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#0a0e17] text-slate-100 overflow-hidden font-sans">
+      {/* Disconnection Alert Banner */}
+      {!wsConnected && (
+        <div
+          role="alert"
+          className="bg-amber-950/90 border-b border-amber-700/80 px-4 py-1.5 text-xs text-amber-200 flex items-center justify-between font-mono z-[6000]"
+        >
+          <div className="flex items-center space-x-2">
+            <WifiOff className="w-4 h-4 text-amber-400 animate-pulse" />
+            <span>
+              STREAM DISCONNECTED: Reconnecting in {wsReconnectCountdown > 0 ? `${wsReconnectCountdown}s` : 'a moment'}...
+            </span>
+          </div>
+          <button
+            onClick={() => connectWebSocket()}
+            className="text-[10px] bg-amber-900 hover:bg-amber-800 text-amber-100 px-2 py-0.5 rounded border border-amber-600 transition"
+          >
+            Retry Now
+          </button>
+        </div>
+      )}
+
       {/* 1. Header with KPIs and Connection State */}
       <HeaderStats
         events={events}
         units={units}
         wsConnected={wsConnected}
         latencyMs={latencyMs}
-        onOpenCitizenPortal={() => setCurrentView('citizen')}
+        onOpenCitizenPortal={() => navigateView('citizen')}
         onOpenPhoneSimulator={() => setIsPhoneModalOpen(true)}
         onOpenPitchDeck={() => setIsPitchDeckOpen(true)}
         onOpenResponderTerminal={() => setIsResponderModalOpen(true)}
@@ -287,7 +412,7 @@ export default function App() {
 
       {/* 2. Main Content Split: GIS Map + Incident Feed Sidebar */}
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
-        {/* Interactive GIS Map (Mapbox GL with Leaflet fallback) */}
+        {/* Interactive GIS Map */}
         <section className="flex-1 h-full p-2.5 flex flex-col min-h-0">
           <GISMap
             events={events}
@@ -320,6 +445,7 @@ export default function App() {
         event={selectedEvent}
         onClose={() => setSelectedEvent(null)}
         onDispatch={handleDispatch}
+        onResolve={handleResolve}
       />
 
       {/* 5. 2G Telephony Phone & IVR Simulator Modal */}

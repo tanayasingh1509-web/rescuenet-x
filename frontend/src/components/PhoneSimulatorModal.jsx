@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Phone, PhoneCall, PhoneOff, Mic,
-  Volume2, X, Radio, Terminal
+  PhoneCall, PhoneOff, Mic,
+  Volume2, X, Radio
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
@@ -9,7 +9,6 @@ const API_BASE = import.meta.env.VITE_API_BASE || '';
 export default function PhoneSimulatorModal({ isOpen, onClose }) {
   const [callState, setCallState] = useState('IDLE'); // 'IDLE' | 'CALLING' | 'CONNECTED' | 'RECORDING' | 'ENDED'
   const [screenMessage, setScreenMessage] = useState('LINE READY: DIAL 112');
-  const [ivrPrompt, setIvrPrompt] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [selectedDigit, setSelectedDigit] = useState(null);
   const [voiceText, setVoiceText] = useState('Emergency! Water is rising rapidly in Sector 18, 4 people trapped on roof!');
@@ -65,7 +64,6 @@ export default function PhoneSimulatorModal({ isOpen, onClose }) {
 
       setCallState('CONNECTED');
       setScreenMessage('IVR ACTIVE: PRESS 1, 2, OR 3');
-      setIvrPrompt(promptText);
       setStatusLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] TwiML Gather IVR Session Initialized`]);
 
       speakText(promptText);
@@ -282,9 +280,9 @@ export default function PhoneSimulatorModal({ isOpen, onClose }) {
         )}
 
         {/* Transmission Log */}
-        <div className="w-full bg-[#080c14] border border-[#1b2537] rounded p-2 max-h-20 overflow-y-auto font-mono text-[9px] text-slate-400 space-y-0.5">
+        <div className="w-full bg-[#080c14] border border-[#1b2537] rounded p-2 max-h-20 overflow-y-auto font-mono text-[9px] text-slate-400 space-y-0.5 select-text">
           {statusLog.length === 0 ? (
-            <div className="text-slate-600 italic">Standby. Click 'Connect Call' to initiate session.</div>
+            <div className="text-slate-400 italic">Standby. Click 'Connect Call' to initiate session.</div>
           ) : (
             statusLog.map((log, idx) => <div key={idx}>{log}</div>)
           )}

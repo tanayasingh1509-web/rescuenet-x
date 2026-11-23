@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Truck, Radio, Phone, Navigation, Clock,
-  CheckCircle2, AlertTriangle, X, Shield, RefreshCw
+  Radio, Clock, CheckCircle2, X
 } from 'lucide-react';
 
 export default function ResponderTerminalModal({ isOpen, onClose, units = [], events = [] }) {
@@ -34,7 +33,7 @@ export default function ResponderTerminalModal({ isOpen, onClose, units = [], ev
       aria-labelledby="responder-terminal-title"
       className="fixed inset-0 z-[4000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
     >
-      <div className="bg-[#0c121e] border border-[#25354e] w-full max-w-3xl rounded shadow-2xl overflow-hidden flex flex-col max-h-[85vh] text-slate-100 select-none">
+      <div className="bg-[#0c121e] border border-[#25354e] w-full max-w-3xl rounded shadow-2xl overflow-hidden flex flex-col max-h-[85vh] text-slate-100">
         {/* Terminal Header */}
         <div className="bg-[#090d16] p-3.5 border-b border-[#1f2b3e] flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
@@ -116,7 +115,7 @@ export default function ResponderTerminalModal({ isOpen, onClose, units = [], ev
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="text-[10px] text-slate-500 block font-mono">BASE LOCATION</span>
+                    <span className="text-[10px] text-slate-400 block font-mono">BASE LOCATION</span>
                     <span className="text-[11px] font-mono text-cyan-400">
                       {currentUnit.lat.toFixed(4)}, {currentUnit.lng.toFixed(4)}
                     </span>
@@ -130,12 +129,12 @@ export default function ResponderTerminalModal({ isOpen, onClose, units = [], ev
                   </span>
 
                   {assignedIncidents.length === 0 ? (
-                    <div className="bg-[#090d16] p-6 rounded border border-[#1a2538] text-center text-slate-500 text-xs">
-                      <CheckCircle2 className="w-5 h-5 mx-auto mb-1 text-slate-600" />
+                    <div className="bg-[#090d16] p-6 rounded border border-[#1a2538] text-center text-slate-400 text-xs">
+                      <CheckCircle2 className="w-5 h-5 mx-auto mb-1 text-slate-400" />
                       Unit is on standby in patrol grid. No active crisis missions assigned.
                     </div>
                   ) : (
-                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1 select-text">
                       {assignedIncidents.map((inc) => (
                         <div
                           key={inc.id}
@@ -153,12 +152,12 @@ export default function ResponderTerminalModal({ isOpen, onClose, units = [], ev
                             <strong className="text-slate-200">LOCUS:</strong> {inc.sector} (GPS: {inc.coordinates.lat.toFixed(4)}, {inc.coordinates.lng.toFixed(4)})
                           </div>
 
-                          <p className="text-slate-400 font-sans text-[11px] bg-[#0c121e] p-2 rounded border border-[#1a2538] leading-relaxed">
+                          <p className="text-slate-300 font-sans text-[11px] bg-[#0c121e] p-2 rounded border border-[#1a2538] leading-relaxed">
                             "{inc.summary}"
                           </p>
 
-                          <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1">
-                            <span>Casualties: <strong className="text-slate-300">{inc.casualty_count}</strong></span>
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
+                            <span>Casualties: <strong className="text-slate-200">{inc.casualty_count}</strong></span>
                             <span className="text-sky-400 flex items-center font-mono">
                               <Clock className="w-3 h-3 mr-1" />
                               ETA: ~{inc.assigned_unit?.eta_minutes || 4} mins
@@ -171,7 +170,7 @@ export default function ResponderTerminalModal({ isOpen, onClose, units = [], ev
                 </div>
               </div>
             ) : (
-              <div className="text-slate-500 text-center py-10">Select a responder squad.</div>
+              <div className="text-slate-400 text-center py-10">Select a responder squad.</div>
             )}
           </div>
         </div>
