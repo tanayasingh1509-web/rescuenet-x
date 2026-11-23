@@ -8,12 +8,14 @@ const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 export default function ApiKeyModal({ isOpen, onClose }) {
   const [geminiKey, setGeminiKey] = useState('');
+  const [googleMapsKey, setGoogleMapsKey] = useState('');
   const [mapboxToken, setMapboxToken] = useState('');
   const [twilioSid, setTwilioSid] = useState('');
   const [twilioToken, setTwilioToken] = useState('');
   const [twilioPhone, setTwilioPhone] = useState('');
 
   const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [showGoogleMapsKey, setShowGoogleMapsKey] = useState(false);
   const [showMapboxToken, setShowMapboxToken] = useState(false);
   const [showTwilioToken, setShowTwilioToken] = useState(false);
 
@@ -44,6 +46,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
         .then((data) => {
           setMaskedStatuses(data);
           if (data.gemini?.masked) setGeminiKey(data.gemini.masked);
+          if (data.google_maps?.masked) setGoogleMapsKey(data.google_maps.masked);
           if (data.mapbox?.masked) setMapboxToken(data.mapbox.masked);
           if (data.twilio?.masked_sid) setTwilioSid(data.twilio.masked_sid);
           if (data.twilio?.phone_number) setTwilioPhone(data.twilio.phone_number);
@@ -81,6 +84,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
 
     const payload = {};
     if (geminiKey && !geminiKey.includes('••')) payload.gemini_api_key = geminiKey;
+    if (googleMapsKey && !googleMapsKey.includes('••')) payload.google_maps_api_key = googleMapsKey;
     if (mapboxToken && !mapboxToken.includes('••')) payload.mapbox_token = mapboxToken;
     if (twilioSid && !twilioSid.includes('••')) payload.twilio_account_sid = twilioSid;
     if (twilioToken && !twilioToken.includes('••')) payload.twilio_auth_token = twilioToken;
@@ -95,7 +99,9 @@ export default function ApiKeyModal({ isOpen, onClose }) {
       const data = await res.json();
       if (data.status === 'success') {
         setSaveSuccess(true);
-        // Also persist mapbox token to localStorage for instant client reload
+        if (payload.google_maps_api_key) {
+          localStorage.setItem('GOOGLE_MAPS_API_KEY', payload.google_maps_api_key);
+        }
         if (payload.mapbox_token) {
           localStorage.setItem('MAPBOX_ACCESS_TOKEN', payload.mapbox_token);
         }
@@ -219,11 +225,53 @@ export default function ApiKeyModal({ isOpen, onClose }) {
             )}
           </div>
 
-          {/* 2. Mapbox Public Access Token */}
+          {/* 2. Google Maps API Key (Active Projection) */}
           <div className="bg-[#101726] border border-[#1e2a3c] rounded p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-1.5">
-                <span className="font-bold text-xs text-slate-100 font-mono">2. Mapbox Public Token</span>
+                <span className="font-bold text-xs text-slate-100 font-mono">2. Google Maps API Key</span>
+                <span className="text-[9px] font-mono bg-emerald-950 text-emerald-300 border border-emerald-800 px-1 rounded">
+                  ACTIVE GIS
+                </span>
+              </div>
+              <a
+                href="https://console.cloud.google.com/google/maps-apis/credentials"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] text-sky-400 hover:text-sky-300 flex items-center space-x-1 font-mono"
+              >
+                <span>Google Cloud Console</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
+
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Powers high-fidelity Google Maps Tactical Dark vector and Satellite projections with Places library integration for CAD emergency dispatch.
+            </p>
+
+            <div className="relative">
+              <input
+                type={showGoogleMapsKey ? 'text' : 'password'}
+                value={googleMapsKey}
+                onChange={(e) => setGoogleMapsKey(e.target.value)}
+                placeholder="AIzaSy..."
+                className="w-full pl-2.5 pr-8 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowGoogleMapsKey(!showGoogleMapsKey)}
+                className="absolute right-2.5 top-2 text-slate-500 hover:text-slate-300"
+              >
+                {showGoogleMapsKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* 3. Mapbox Public Access Token */}
+          <div className="bg-[#101726] border border-[#1e2a3c] rounded p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-1.5">
+                <span className="font-bold text-xs text-slate-100 font-mono">3. Mapbox Public Token</span>
                 <span className="text-[9px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800 px-1 rounded">
                   GIS VECTOR
                 </span>
@@ -261,11 +309,11 @@ export default function ApiKeyModal({ isOpen, onClose }) {
             </div>
           </div>
 
-          {/* 3. Twilio Telephony Credentials */}
+          {/* 4. Twilio Telephony Credentials */}
           <div className="bg-[#101726] border border-[#1e2a3c] rounded p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-1.5">
-                <span className="font-bold text-xs text-slate-100 font-mono">3. Twilio Telephony</span>
+                <span className="font-bold text-xs text-slate-100 font-mono">4. Twilio Telephony</span>
                 <span className="text-[9px] font-mono bg-purple-950 text-purple-300 border border-purple-800 px-1 rounded">
                   2G VOICE / SMS
                 </span>

@@ -40,3 +40,5 @@ backend/audio_samples/*
 Thumbs.db
 .vscode/
 .idea/
+
+cloudflared.exe

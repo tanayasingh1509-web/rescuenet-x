@@ -31,6 +31,7 @@ def mask_key(val: str) -> str:
 class KeyConfigPayload(BaseModel):
     gemini_api_key: Optional[str] = None
     mapbox_token: Optional[str] = None
+    google_maps_api_key: Optional[str] = None
     twilio_account_sid: Optional[str] = None
     twilio_auth_token: Optional[str] = None
     twilio_phone_number: Optional[str] = None
@@ -43,6 +44,7 @@ async def get_key_status():
     """Returns safe masked status of all configured API keys."""
     gemini_key = os.getenv("GEMINI_API_KEY", "")
     mapbox_token = os.getenv("MAPBOX_ACCESS_TOKEN", os.getenv("VITE_MAPBOX_TOKEN", ""))
+    google_maps_key = os.getenv("GOOGLE_MAPS_API_KEY", os.getenv("VITE_GOOGLE_MAPS_API_KEY", "AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao"))
     twilio_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
     twilio_num = os.getenv("TWILIO_PHONE_NUMBER", "")
 
@@ -51,6 +53,11 @@ async def get_key_status():
             "configured": bool(gemini_key),
             "masked": mask_key(gemini_key),
             "model": os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        },
+        "google_maps": {
+            "configured": bool(google_maps_key),
+            "masked": mask_key(google_maps_key),
+            "raw_key": google_maps_key # safe client public key for Maps JS SDK
         },
         "mapbox": {
             "configured": bool(mapbox_token and not mapbox_token.startswith("pk.mock")),
@@ -69,6 +76,9 @@ async def update_keys(payload: KeyConfigPayload):
     updates = {}
     if payload.gemini_api_key is not None:
         updates["GEMINI_API_KEY"] = payload.gemini_api_key.strip()
+    if payload.google_maps_api_key is not None:
+        updates["GOOGLE_MAPS_API_KEY"] = payload.google_maps_api_key.strip()
+        updates["VITE_GOOGLE_MAPS_API_KEY"] = payload.google_maps_api_key.strip()
     if payload.mapbox_token is not None:
         updates["MAPBOX_ACCESS_TOKEN"] = payload.mapbox_token.strip()
         updates["VITE_MAPBOX_TOKEN"] = payload.mapbox_token.strip()

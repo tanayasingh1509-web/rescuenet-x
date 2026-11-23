@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import mapboxgl from 'mapbox-gl';
-import { Layers, Activity, Radio, Crosshair, ChevronDown, ChevronUp, Send } from 'lucide-react';
+import { Layers, Activity, Radio, Crosshair, ChevronDown, ChevronUp, Send, Globe, Satellite } from 'lucide-react';
 
 // Fix Leaflet default icon issues in bundlers
 delete L.Icon.Default.prototype._getIconUrl;
@@ -112,27 +112,281 @@ function ChangeView({ center, zoom }) {
   return null;
 }
 
+// Tactical Dark Theme for Google Maps CAD Interface
+const TACTICAL_DARK_STYLES = [
+  { elementType: 'geometry', stylers: [{ color: '#090e18' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#090d16' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#7488a6' }] },
+  {
+    featureType: 'administrative.locality',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#94a3b8' }]
+  },
+  {
+    featureType: 'poi',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#64748b' }]
+  },
+  {
+    featureType: 'poi.park',
+    elementType: 'geometry',
+    stylers: [{ color: '#0b1626' }]
+  },
+  {
+    featureType: 'road',
+    elementType: 'geometry',
+    stylers: [{ color: '#162234' }]
+  },
+  {
+    featureType: 'road',
+    elementType: 'geometry.stroke',
+    stylers: [{ color: '#101826' }]
+  },
+  {
+    featureType: 'road',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#829ab8' }]
+  },
+  {
+    featureType: 'road.highway',
+    elementType: 'geometry',
+    stylers: [{ color: '#25354e' }]
+  },
+  {
+    featureType: 'road.highway',
+    elementType: 'geometry.stroke',
+    stylers: [{ color: '#172233' }]
+  },
+  {
+    featureType: 'road.highway',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#9bb1d0' }]
+  },
+  {
+    featureType: 'transit',
+    elementType: 'geometry',
+    stylers: [{ color: '#162234' }]
+  },
+  {
+    featureType: 'transit.station',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#64748b' }]
+  },
+  {
+    featureType: 'water',
+    elementType: 'geometry',
+    stylers: [{ color: '#060b14' }]
+  },
+  {
+    featureType: 'water',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#3b4b63' }]
+  },
+  {
+    featureType: 'water',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#060b14' }]
+  }
+];
+
+// Asynchronous loader for Google Maps JavaScript SDK
+const loadGoogleMapsScript = (apiKey) => {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined') return reject('No browser window');
+    if (window.google && window.google.maps) {
+      return resolve(window.google.maps);
+    }
+    const existing = document.getElementById('google-maps-sdk');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(window.google.maps));
+      existing.addEventListener('error', (err) => reject(err));
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'google-maps-sdk';
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve(window.google.maps);
+    script.onerror = (err) => reject(err);
+    document.head.appendChild(script);
+  });
+};
+
 export default function GISMap({
   events = [],
   units = [],
   selectedEvent,
   onSelectEvent,
   onDispatch,
+  googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao',
   mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN || ''
 }) {
-  const [mapEngine, setMapEngine] = useState('leaflet'); // 'leaflet' | 'mapbox'
+  const [mapEngine, setMapEngine] = useState('google'); // 'google' | 'google-satellite' | 'leaflet' | 'mapbox'
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [isLegendOpen, setIsLegendOpen] = useState(true);
+  const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
+
+  const googleContainerRef = useRef(null);
+  const googleMapInstanceRef = useRef(null);
+  const googleMarkersRef = useRef([]);
+  const googleCirclesRef = useRef([]);
+
   const mapboxContainerRef = useRef(null);
   const mapboxInstanceRef = useRef(null);
-  const markersRef = useRef([]);
+  const mapboxMarkersRef = useRef([]);
 
   const defaultCenter = [28.6139, 77.2090];
   const center = selectedEvent && selectedEvent.coordinates
     ? [selectedEvent.coordinates.lat, selectedEvent.coordinates.lng]
     : defaultCenter;
 
-  // Initialize Mapbox if selected and token is available
+  // 1. Initialize Google Maps Engine
+  useEffect(() => {
+    if ((mapEngine === 'google' || mapEngine === 'google-satellite') && googleMapsApiKey) {
+      loadGoogleMapsScript(googleMapsApiKey)
+        .then((maps) => {
+          setGoogleMapsLoaded(true);
+          if (googleContainerRef.current && !googleMapInstanceRef.current) {
+            const isSat = mapEngine === 'google-satellite';
+            const gMap = new maps.Map(googleContainerRef.current, {
+              center: { lat: defaultCenter[0], lng: defaultCenter[1] },
+              zoom: 13,
+              mapTypeId: isSat ? 'hybrid' : 'roadmap',
+              styles: isSat ? [] : TACTICAL_DARK_STYLES,
+              disableDefaultUI: true,
+              zoomControl: true,
+              gestureHandling: 'greedy'
+            });
+            googleMapInstanceRef.current = gMap;
+          } else if (googleMapInstanceRef.current) {
+            // Update map type if already initialized
+            const isSat = mapEngine === 'google-satellite';
+            googleMapInstanceRef.current.setMapTypeId(isSat ? 'hybrid' : 'roadmap');
+            googleMapInstanceRef.current.setOptions({
+              styles: isSat ? [] : TACTICAL_DARK_STYLES
+            });
+          }
+        })
+        .catch((err) => {
+          console.warn('Google Maps load failed, falling back to Leaflet:', err);
+          setMapEngine('leaflet');
+        });
+    }
+  }, [mapEngine, googleMapsApiKey]);
+
+  // 2. Render Google Maps Markers and Hazard Circles
+  useEffect(() => {
+    if (!googleMapInstanceRef.current || !window.google || !window.google.maps) return;
+    const gMap = googleMapInstanceRef.current;
+
+    // Clear old Google markers and circles
+    googleMarkersRef.current.forEach(m => m.setMap(null));
+    googleMarkersRef.current = [];
+    googleCirclesRef.current.forEach(c => c.setMap(null));
+    googleCirclesRef.current = [];
+
+    // Render Hazard Zones (Circles)
+    if (showHeatmap) {
+      events.forEach(ev => {
+        if (!ev.coordinates || !ev.coordinates.lat || !ev.coordinates.lng) return;
+        const color = ev.severity >= 8 ? '#ef4444' : (ev.severity >= 5 ? '#f59e0b' : '#38bdf8');
+        const circle = new window.google.maps.Circle({
+          strokeColor: color,
+          strokeOpacity: 0.85,
+          strokeWeight: 1,
+          fillColor: color,
+          fillOpacity: 0.16,
+          map: gMap,
+          center: { lat: ev.coordinates.lat, lng: ev.coordinates.lng },
+          radius: ev.severity * 130
+        });
+        googleCirclesRef.current.push(circle);
+      });
+    }
+
+    // Render Incident Markers
+    events.forEach(ev => {
+      if (!ev.coordinates || !ev.coordinates.lat || !ev.coordinates.lng) return;
+      const color = ev.severity >= 8 ? '#ef4444' : (ev.severity >= 5 ? '#f59e0b' : '#38bdf8');
+      
+      const svgMarker = {
+        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+            <circle cx="14" cy="14" r="12" fill="#090e17" stroke="${color}" stroke-width="2.5" />
+            <text x="14" y="18" fill="${color}" font-family="monospace, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">${ev.severity}</text>
+          </svg>
+        `)}`,
+        scaledSize: new window.google.maps.Size(28, 28),
+        anchor: new window.google.maps.Point(14, 14)
+      };
+
+      const marker = new window.google.maps.Marker({
+        position: { lat: ev.coordinates.lat, lng: ev.coordinates.lng },
+        map: gMap,
+        icon: svgMarker,
+        title: `[SEV ${ev.severity}] ${ev.category} - ${ev.sector}`
+      });
+
+      marker.addListener('click', () => {
+        onSelectEvent(ev);
+      });
+
+      googleMarkersRef.current.push(marker);
+    });
+
+    // Render First Responder Fleet Units
+    units.forEach(u => {
+      if (!u.lat || !u.lng) return;
+      const colorMap = {
+        'RESCUE': '#2563eb',
+        'AMBULANCE': '#059669',
+        'FIRE': '#ea580c',
+        'POLICE': '#7c3aed'
+      };
+      const labelMap = {
+        'RESCUE': 'RES',
+        'AMBULANCE': 'EMS',
+        'FIRE': 'FIR',
+        'POLICE': 'POL'
+      };
+      const color = colorMap[u.unit_type] || '#2563eb';
+      const label = labelMap[u.unit_type] || u.unit_type.slice(0, 3);
+
+      const svgUnit = {
+        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+          <svg xmlns="http://www.w3.org/2000/svg" width="34" height="20" viewBox="0 0 34 20">
+            <rect x="1" y="1" width="32" height="18" rx="2" fill="#0a101d" stroke="${color}" stroke-width="1.5" />
+            <text x="17" y="14" fill="${color}" font-family="monospace, sans-serif" font-size="9" font-weight="bold" text-anchor="middle" letter-spacing="0.5">${label}</text>
+          </svg>
+        `)}`,
+        scaledSize: new window.google.maps.Size(34, 20),
+        anchor: new window.google.maps.Point(17, 10)
+      };
+
+      const marker = new window.google.maps.Marker({
+        position: { lat: u.lat, lng: u.lng },
+        map: gMap,
+        icon: svgUnit,
+        title: `UNIT: ${u.name} (${u.unit_type})`
+      });
+
+      googleMarkersRef.current.push(marker);
+    });
+  }, [events, units, showHeatmap, googleMapsLoaded, mapEngine, onSelectEvent]);
+
+  // Recenter Google Map when selectedEvent changes
+  useEffect(() => {
+    if ((mapEngine === 'google' || mapEngine === 'google-satellite') && googleMapInstanceRef.current && selectedEvent && selectedEvent.coordinates) {
+      googleMapInstanceRef.current.panTo({
+        lat: selectedEvent.coordinates.lat,
+        lng: selectedEvent.coordinates.lng
+      });
+      googleMapInstanceRef.current.setZoom(14);
+    }
+  }, [selectedEvent, mapEngine]);
+
+  // 3. Initialize Mapbox if selected and token is available
   useEffect(() => {
     if (mapEngine === 'mapbox' && mapboxToken) {
       try {
@@ -160,8 +414,8 @@ export default function GISMap({
   // Update Mapbox markers when events change
   useEffect(() => {
     if (mapEngine === 'mapbox' && mapboxInstanceRef.current) {
-      markersRef.current.forEach(m => m.remove());
-      markersRef.current = [];
+      mapboxMarkersRef.current.forEach(m => m.remove());
+      mapboxMarkersRef.current = [];
 
       events.forEach(ev => {
         if (!ev.coordinates) return;
@@ -182,7 +436,7 @@ export default function GISMap({
         const marker = new mapboxgl.Marker(el)
           .setLngLat([ev.coordinates.lng, ev.coordinates.lat])
           .addTo(mapboxInstanceRef.current);
-        markersRef.current.push(marker);
+        mapboxMarkersRef.current.push(marker);
       });
     }
   }, [events, mapEngine, onSelectEvent]);
@@ -190,10 +444,41 @@ export default function GISMap({
   return (
     <div className="relative w-full h-full rounded border border-[#1b2638] overflow-hidden bg-[#090d16] select-none">
       {/* Precision Map Toolbar (Top-Left) */}
-      <div className="absolute top-3 left-3 z-[1000] flex items-center space-x-1.5 bg-[#0d1422] border border-[#1e2a3e] px-2 py-1.5 rounded text-xs">
-        <span className="text-[10px] text-slate-400 font-mono uppercase tracking-wider pr-1 border-r border-[#1f2b3e]">
-          GIS ENGINE
+      <div className="absolute top-3 left-3 z-[1000] flex items-center space-x-1.5 bg-[#0d1422] border border-[#1e2a3e] px-2 py-1.5 rounded text-xs shadow-lg">
+        <span className="text-[10px] text-slate-400 font-mono uppercase tracking-wider pr-1 border-r border-[#1f2b3e] flex items-center space-x-1">
+          <Globe className="w-3 h-3 text-emerald-400" />
+          <span>GIS ENGINE</span>
         </span>
+
+        {/* Google Maps (Dark Tactical) */}
+        <button
+          onClick={() => setMapEngine('google')}
+          className={`px-2 py-0.5 rounded text-[11px] font-medium transition flex items-center space-x-1 ${
+            mapEngine === 'google'
+              ? 'bg-[#1b2638] text-white font-bold border border-emerald-500/60 shadow-sm'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+          title="Google Maps Tactical Dark (Active Projection)"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          <span>Google Dark</span>
+        </button>
+
+        {/* Google Maps Satellite */}
+        <button
+          onClick={() => setMapEngine('google-satellite')}
+          className={`px-2 py-0.5 rounded text-[11px] font-medium transition flex items-center space-x-1 ${
+            mapEngine === 'google-satellite'
+              ? 'bg-[#1b2638] text-white font-bold border border-sky-500/60 shadow-sm'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+          title="Google Maps Aerial Satellite Imagery"
+        >
+          <Satellite className="w-3 h-3 text-sky-400" />
+          <span>Satellite</span>
+        </button>
+
+        {/* Leaflet Carto Dark (Offline) */}
         <button
           onClick={() => setMapEngine('leaflet')}
           className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
@@ -201,13 +486,16 @@ export default function GISMap({
               ? 'bg-[#1b2638] text-white font-bold border border-[#2d3e5a]'
               : 'text-slate-400 hover:text-slate-200'
           }`}
+          title="OpenStreetMap / CARTO Offline Fallback"
         >
-          Carto Dark (Offline)
+          Carto Dark
         </button>
+
+        {/* Mapbox Vector */}
         <button
           onClick={() => {
             if (!mapboxToken) {
-              alert('Notice: Mapbox access token not set. Running on Carto Dark / OpenStreetMap fallback.');
+              alert('Notice: Mapbox access token not set. Running on Google Maps or Carto Dark.');
             } else {
               setMapEngine('mapbox');
             }
@@ -218,7 +506,7 @@ export default function GISMap({
               : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          Mapbox Vector
+          Mapbox
         </button>
 
         <span className="w-px h-3 bg-[#1f2b3e]" />
@@ -234,12 +522,16 @@ export default function GISMap({
           title="Toggle Hazard Density Overlay"
         >
           <span className={`w-1.5 h-1.5 rounded-full ${showHeatmap ? 'bg-rose-400' : 'bg-slate-500'}`} />
-          <span>Heatmap: {showHeatmap ? 'ACTIVE' : 'OFF'}</span>
+          <span>Hazard Radius: {showHeatmap ? 'ON' : 'OFF'}</span>
         </button>
       </div>
 
       {/* Map Rendering Container */}
-      {mapEngine === 'leaflet' ? (
+      {(mapEngine === 'google' || mapEngine === 'google-satellite') ? (
+        <div ref={googleContainerRef} className="w-full h-full bg-[#090d16]" />
+      ) : mapEngine === 'mapbox' ? (
+        <div ref={mapboxContainerRef} className="w-full h-full" />
+      ) : (
         <MapContainer
           center={defaultCenter}
           zoom={13}
@@ -338,12 +630,10 @@ export default function GISMap({
             </Marker>
           ))}
         </MapContainer>
-      ) : (
-        <div ref={mapboxContainerRef} className="w-full h-full" />
       )}
 
       {/* Collapsible Tactical Legend (Bottom-Right) */}
-      <div className="absolute bottom-3 right-3 z-[1000] bg-[#0d1422] border border-[#1e2a3e] rounded text-[11px] text-slate-300">
+      <div className="absolute bottom-3 right-3 z-[1000] bg-[#0d1422] border border-[#1e2a3e] rounded text-[11px] text-slate-300 shadow-xl">
         <div
           onClick={() => setIsLegendOpen(!isLegendOpen)}
           className="flex items-center justify-between px-2.5 py-1.5 cursor-pointer font-semibold text-xs text-slate-200 border-b border-[#1b2638]"
