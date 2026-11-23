@@ -42,3 +42,6 @@ Thumbs.db
 .idea/
 
 cloudflared.exe
+
+tunnel_daemon.py
+tunnel_url.txt
