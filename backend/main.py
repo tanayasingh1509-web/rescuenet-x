@@ -41,17 +41,7 @@ app.include_router(simulate.router)
 app.include_router(dispatch.router)
 app.include_router(config.router)
 
-# Mount Frontend static build if present
-from pathlib import Path
-FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-if FRONTEND_DIST.exists():
-    app.mount("/dashboard", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="dashboard")
-    # Also mount root for direct access if index.html is present
-    from fastapi.responses import FileResponse
-    @app.get("/")
-    async def serve_index():
-        return FileResponse(str(FRONTEND_DIST / "index.html"))
-    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
+
 
 @app.websocket("/ws")
 @app.websocket("/api/ws")
@@ -91,6 +81,13 @@ async def health_check():
         "connections": len(ws_manager.active_connections),
         "total_events": len(store.list_events())
     }
+
+# Mount Frontend static build after all API routes
+from pathlib import Path
+FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if FRONTEND_DIST.exists():
+    app.mount("/dashboard", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="dashboard")
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
 
 @app.on_event("startup")
 async def startup_event():
