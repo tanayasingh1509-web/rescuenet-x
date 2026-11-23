@@ -10,8 +10,10 @@ import PitchDeckModal from './components/PitchDeckModal';
 import ResponderTerminalModal from './components/ResponderTerminalModal';
 import ApiKeyModal from './components/ApiKeyModal';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
+const API_BASE = import.meta.env.VITE_API_BASE || '';
+const WS_URL = import.meta.env.VITE_WS_URL || (typeof window !== 'undefined' 
+  ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws` 
+  : 'ws://localhost:8000/ws');
 
 // Pure Web Audio API tactical crisis beep
 const playTacticalBeep = (freq = 880, duration = 0.15) => {

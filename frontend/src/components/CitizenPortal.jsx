@@ -5,7 +5,7 @@ import {
   Clock, PhoneCall, Radio, ArrowLeft, Loader2, Navigation, Shield
 } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 export default function CitizenPortal({ onBackToCommand }) {
   const [category, setCategory] = useState('FLOOD');
