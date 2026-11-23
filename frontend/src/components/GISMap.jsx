@@ -204,7 +204,7 @@ const loadGoogleMapsScript = (apiKey) => {
     }
     const script = document.createElement('script');
     script.id = 'google-maps-sdk';
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
     script.async = true;
     script.defer = true;
     script.onload = () => resolve(window.google.maps);
@@ -219,10 +219,10 @@ export default function GISMap({
   selectedEvent,
   onSelectEvent,
   onDispatch,
-  googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao',
+  googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
   mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN || ''
 }) {
-  const [mapEngine, setMapEngine] = useState('google'); // 'google' | 'google-satellite' | 'leaflet' | 'mapbox'
+  const [mapEngine, setMapEngine] = useState(googleMapsApiKey ? 'google' : 'leaflet'); // 'google' | 'google-satellite' | 'leaflet' | 'mapbox'
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [isLegendOpen, setIsLegendOpen] = useState(true);
   const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
@@ -452,7 +452,13 @@ export default function GISMap({
 
         {/* Google Maps (Dark Tactical) */}
         <button
-          onClick={() => setMapEngine('google')}
+          onClick={() => {
+            if (!googleMapsApiKey) {
+              alert('Notice: Google Maps API key not configured. Operating on Carto Dark / OpenStreetMap engine.');
+            } else {
+              setMapEngine('google');
+            }
+          }}
           className={`px-2 py-0.5 rounded text-[11px] font-medium transition flex items-center space-x-1 ${
             mapEngine === 'google'
               ? 'bg-[#1b2638] text-white font-bold border border-emerald-500/60 shadow-sm'
@@ -460,13 +466,19 @@ export default function GISMap({
           }`}
           title="Google Maps Tactical Dark (Active Projection)"
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          <span className={`w-1.5 h-1.5 rounded-full ${googleMapsApiKey ? 'bg-emerald-400' : 'bg-slate-500'}`} />
           <span>Google Dark</span>
         </button>
 
         {/* Google Maps Satellite */}
         <button
-          onClick={() => setMapEngine('google-satellite')}
+          onClick={() => {
+            if (!googleMapsApiKey) {
+              alert('Notice: Google Maps API key not configured. Operating on Carto Dark / OpenStreetMap engine.');
+            } else {
+              setMapEngine('google-satellite');
+            }
+          }}
           className={`px-2 py-0.5 rounded text-[11px] font-medium transition flex items-center space-x-1 ${
             mapEngine === 'google-satellite'
               ? 'bg-[#1b2638] text-white font-bold border border-sky-500/60 shadow-sm'

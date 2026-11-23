@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+# Pre-commit hook: scan working tree for leaked API keys and secrets
+python scripts/check_secrets.py
+if [ $? -ne 0 ]; then
+  echo "Commit blocked: Leaked secret detected. Remove secrets before committing."
+  exit 1
+fi

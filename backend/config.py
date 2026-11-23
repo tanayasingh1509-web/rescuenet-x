@@ -76,12 +76,12 @@ AUDIO_SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
 MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN", os.getenv("VITE_MAPBOX_TOKEN", ""))
 
 # Google Maps API Key (for high-fidelity GIS tactical satellite & vector mapping)
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", os.getenv("VITE_GOOGLE_MAPS_API_KEY", "AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao"))
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", os.getenv("VITE_GOOGLE_MAPS_API_KEY", ""))
 
 # Twilio configuration (for live webhooks via Ngrok or local testing)
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "AC_MOCK_DEMO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "mock_demo_auth_token")
-TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "+18005550199")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
 
 # Server configuration
 HOST = os.getenv("HOST", "0.0.0.0")

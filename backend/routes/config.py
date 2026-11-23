@@ -21,7 +21,7 @@ from ..config import (
 router = APIRouter(prefix="/api/config", tags=["Configuration & Credentials"])
 
 def mask_key(val: str) -> str:
-    """Safely masks an API key (e.g. AIzaSy...94xQ) without exposing secrets."""
+    """Safely masks an API key without exposing secrets."""
     if not val or val.startswith("AC_MOCK") or val.startswith("mock_"):
         return ""
     if len(val) <= 8:
@@ -44,7 +44,7 @@ async def get_key_status():
     """Returns safe masked status of all configured API keys."""
     gemini_key = os.getenv("GEMINI_API_KEY", "")
     mapbox_token = os.getenv("MAPBOX_ACCESS_TOKEN", os.getenv("VITE_MAPBOX_TOKEN", ""))
-    google_maps_key = os.getenv("GOOGLE_MAPS_API_KEY", os.getenv("VITE_GOOGLE_MAPS_API_KEY", "AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao"))
+    google_maps_key = os.getenv("GOOGLE_MAPS_API_KEY", os.getenv("VITE_GOOGLE_MAPS_API_KEY", ""))
     twilio_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
     twilio_num = os.getenv("TWILIO_PHONE_NUMBER", "")
 
@@ -56,8 +56,7 @@ async def get_key_status():
         },
         "google_maps": {
             "configured": bool(google_maps_key),
-            "masked": mask_key(google_maps_key),
-            "raw_key": google_maps_key # safe client public key for Maps JS SDK
+            "masked": mask_key(google_maps_key)
         },
         "mapbox": {
             "configured": bool(mapbox_token and not mapbox_token.startswith("pk.mock")),

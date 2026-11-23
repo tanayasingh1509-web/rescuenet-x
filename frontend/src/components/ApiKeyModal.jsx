@@ -191,7 +191,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
                   type={showGeminiKey ? 'text' : 'password'}
                   value={geminiKey}
                   onChange={(e) => setGeminiKey(e.target.value)}
-                  placeholder="AIzaSy..."
+                  placeholder="Enter Gemini API key..."
                   className="w-full pl-2.5 pr-8 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 font-mono"
                 />
                 <button
@@ -254,7 +254,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
                 type={showGoogleMapsKey ? 'text' : 'password'}
                 value={googleMapsKey}
                 onChange={(e) => setGoogleMapsKey(e.target.value)}
-                placeholder="AIzaSy..."
+                placeholder="Enter Google Maps API key..."
                 className="w-full pl-2.5 pr-8 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 font-mono"
               />
               <button
@@ -296,7 +296,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
                 type={showMapboxToken ? 'text' : 'password'}
                 value={mapboxToken}
                 onChange={(e) => setMapboxToken(e.target.value)}
-                placeholder="pk.eyJ1..."
+                placeholder="Enter Mapbox public token..."
                 className="w-full pl-2.5 pr-8 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 font-mono"
               />
               <button
