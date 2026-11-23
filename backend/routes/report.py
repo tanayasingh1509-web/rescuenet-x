@@ -4,9 +4,11 @@ Handles:
 - FR-2.1: Image Classification (Flood, Fire, Collapse) with two-tier confidence logic
 - FR-2.2: Dynamic Severity Scoring
 - FR-2.3: Perceptual Hashing (pHash) Deduplication within 500m, same category, 30m window
+- Phase 2.6: File upload header sniffing, max 8MB limit, safe server-generated extension
+- Phase 2.8: Rate limiting per IP
 """
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
 import shutil
 import uuid
 import os
@@ -18,36 +20,36 @@ from ..schemas import EventPayload, Coordinates, PWAReportRequest
 from ..vision_engine import analyze_visual_disaster
 from ..agentic_dispatcher import run_agentic_pipeline
 from ..websocket_manager import ws_manager
+from ..security import validate_image_upload, citizen_report_limiter
 
 router = APIRouter(prefix="/api/report", tags=["Incident Reports"])
 
 @router.post("/visual")
 async def report_visual(
+    request: Request,
     image: UploadFile = File(...),
     lat: Optional[float] = Form(None),
     lng: Optional[float] = Form(None),
     sector: Optional[str] = Form("Sector 4 - Commercial Zone")
 ):
     """
-    FR-2.1, FR-2.2, FR-2.3:
-    Visual incident verification endpoint:
-    1. Receives image upload
-    2. Runs Computer Vision classification (Flood, Fire, Collapse)
-    3. Computes pHash and checks for duplicate images (< 500m, Hamming < 5, same category, 30m window)
-    4. Evaluates two-tier confidence thresholds:
-       - Weak heuristic is capped at 0.80, status=MANUAL_REVIEW, verified=False
-       - Real classifier (Gemini Vision) allows >= 0.85, status=DISPATCHED, verified=True
-    5. Dispatches or queues nearest unit and streams via WebSocket (< 50ms)
+    Visual incident verification endpoint with content sniffing, size checks, and rate limiting.
     """
-    ext = os.path.splitext(image.filename)[1] if image.filename else ".jpg"
-    filename = f"{uuid.uuid4().hex[:10]}{ext}"
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    citizen_report_limiter.check(client_ip)
+
+    # Read image bytes and sniff MIME / format
+    content = await image.read()
+    safe_ext = validate_image_upload(content)
+
+    filename = f"{uuid.uuid4().hex[:12]}{safe_ext}"
     saved_path = str(IMAGE_UPLOAD_DIR / filename)
 
     try:
-        with open(saved_path, "wb") as buffer:
-            shutil.copyfileobj(image.file, buffer)
+        with open(saved_path, "wb") as f:
+            f.write(content)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save image upload: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to persist validated image artifact: {e}")
 
     # Analyze image with Vision Engine
     vision_result = analyze_visual_disaster(saved_path)
@@ -57,7 +59,6 @@ async def report_visual(
         event_lat, event_lng = float(lat), float(lng)
     else:
         is_loc_unknown = True
-        # Apply jitter so distinct unlocated image reports do not falsely merge
         event_lat = DEFAULT_CENTER_LAT + random.uniform(-0.010, 0.010)
         event_lng = DEFAULT_CENTER_LNG + random.uniform(-0.010, 0.010)
 
@@ -93,11 +94,13 @@ async def report_visual(
     }
 
 @router.post("/pwa")
-async def report_pwa(report: PWAReportRequest):
+async def report_pwa(request: Request, report: PWAReportRequest):
     """
-    Offline PWA Mesh report submission endpoint.
-    Handles digital incident reports submitted by citizens via web app or local hotspot mesh.
+    Offline PWA Mesh report submission endpoint with rate limiting.
     """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    citizen_report_limiter.check(client_ip)
+
     event_payload = EventPayload(
         category=report.category,
         coordinates=Coordinates(lat=report.lat, lng=report.lng),

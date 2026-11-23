@@ -1,9 +1,10 @@
 """
 Configuration & API Key Management Routes for RESCUENET-X
 Allows operators to securely inspect, configure, and test API credentials.
+All routes strictly require admin token authentication (Phase 2.1 & 2.7).
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 import os
@@ -17,8 +18,13 @@ from ..config import (
     TWILIO_ACCOUNT_SID,
     TWILIO_PHONE_NUMBER
 )
+from ..security import verify_admin_token
 
-router = APIRouter(prefix="/api/config", tags=["Configuration & Credentials"])
+router = APIRouter(
+    prefix="/api/config",
+    tags=["Configuration & Credentials"],
+    dependencies=[Depends(verify_admin_token)]
+)
 
 def mask_key(val: str) -> str:
     """Safely masks an API key without exposing secrets."""
@@ -41,7 +47,7 @@ class GeminiTestPayload(BaseModel):
 
 @router.get("/keys")
 async def get_key_status():
-    """Returns safe masked status of all configured API keys."""
+    """Returns safe masked status of all configured API keys (Never raw key)."""
     gemini_key = os.getenv("GEMINI_API_KEY", "")
     mapbox_token = os.getenv("MAPBOX_ACCESS_TOKEN", os.getenv("VITE_MAPBOX_TOKEN", ""))
     google_maps_key = os.getenv("GOOGLE_MAPS_API_KEY", os.getenv("VITE_GOOGLE_MAPS_API_KEY", ""))
@@ -71,7 +77,7 @@ async def get_key_status():
 
 @router.post("/keys")
 async def update_keys(payload: KeyConfigPayload):
-    """Safely updates and persists API keys to .env and active runtime."""
+    """Safely updates and persists whitelisted API keys to .env and active runtime."""
     updates = {}
     if payload.gemini_api_key is not None:
         updates["GEMINI_API_KEY"] = payload.gemini_api_key.strip()
@@ -98,20 +104,27 @@ async def update_keys(payload: KeyConfigPayload):
 
 @router.post("/test-gemini")
 async def test_gemini_connection(payload: GeminiTestPayload):
-    """Tests live connection to Google Gemini API."""
+    """
+    Tests live connection to Google Gemini API.
+    Sends API key in x-goog-api-key header and NEVER echoes upstream response body.
+    """
     key = payload.api_key or os.getenv("GEMINI_API_KEY", "")
     if not key:
         raise HTTPException(status_code=400, detail="No Gemini API key provided to test.")
 
     model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    headers = {
+        "x-goog-api-key": key,
+        "Content-Type": "application/json"
+    }
 
     test_body = {
-        "contents": [{"parts": [{"text": "Hello, emergency test message."}]}]
+        "contents": [{"parts": [{"text": "Ping"}]}]
     }
 
     try:
-        res = requests.post(url, json=test_body, timeout=6)
+        res = requests.post(url, headers=headers, json=test_body, timeout=6)
         if res.status_code == 200:
             return {
                 "status": "connected",
@@ -119,13 +132,14 @@ async def test_gemini_connection(payload: GeminiTestPayload):
                 "message": "Successfully authenticated with Google Gemini API."
             }
         else:
+            print(f"[SECURITY] Upstream Gemini error code: {res.status_code}")
             return {
                 "status": "error",
-                "code": res.status_code,
-                "detail": res.text
+                "message": f"Upstream service returned error (HTTP {res.status_code}). Check API key and quota."
             }
     except Exception as e:
+        print(f"[SECURITY] Gemini connection test exception: {e}")
         return {
             "status": "error",
-            "detail": str(e)
+            "message": "Upstream Gemini connection failed or timed out."
         }

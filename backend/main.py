@@ -13,7 +13,7 @@ from pathlib import Path
 import os
 import traceback
 
-from .config import HOST, PORT, DEBUG, AUDIO_UPLOAD_DIR, IMAGE_UPLOAD_DIR
+from .config import HOST, PORT, DEBUG, AUDIO_UPLOAD_DIR, IMAGE_UPLOAD_DIR, ALLOWED_ORIGINS_LIST
 from .websocket_manager import ws_manager
 from .routes import voice, report, simulate, dispatch, config
 from .store import store
@@ -88,12 +88,34 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": "An internal server error occurred", "message": str(exc)}
     )
 
-# CORS middleware allowing local frontend dev server and PWA clients
+# Phase 2.6: Security Headers Middleware (CSP, X-Content-Type-Options, Referrer-Policy, Uploads execution protection)
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    # Prevent HTML or SVG execution from uploaded asset folders
+    if request.url.path.startswith("/uploads/"):
+        lower = request.url.path.lower()
+        if lower.endswith(".html") or lower.endswith(".htm") or lower.endswith(".svg"):
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content={"detail": "Execution of scriptable markup files (.html, .svg) from uploads is forbidden."}
+            )
+
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:; "
+        "img-src 'self' https: data: blob:; "
+        "connect-src 'self' https: wss: ws:;"
+    )
+    return response
+
+# Phase 2.2: CORS middleware restricted to allowed origins (no wildcard with credentials)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS_LIST,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -114,6 +136,7 @@ async def websocket_endpoint(websocket: WebSocket):
     """
     FR-3.1 Real-Time Streaming:
     WebSocket connection endpoint. Pushes Section 4.5 event payloads to the dashboard in < 50ms.
+    Strictly read-only; ignores any client modification commands.
     """
     await ws_manager.connect(websocket)
     try:
@@ -127,7 +150,7 @@ async def websocket_endpoint(websocket: WebSocket):
         })
 
         while True:
-            # Keep-alive heartbeat & client command receiver
+            # Keep-alive heartbeat receiver (strictly read-only; ignores client commands)
             data = await websocket.receive_text()
             if data == "ping":
                 await websocket.send_text("pong")

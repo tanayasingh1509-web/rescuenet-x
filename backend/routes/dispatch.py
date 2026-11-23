@@ -7,17 +7,18 @@ Handles:
 - Incident resolution and unit release
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional, List
 import time
 
 from ..schemas import EventPayload, RescueUnit, DispatchRequest
 from ..store import store
 from ..websocket_manager import ws_manager
+from ..security import verify_admin_token
 
 router = APIRouter(prefix="/api", tags=["Dispatch & Ops"])
 
-@router.post("/dispatch/{event_id}")
+@router.post("/dispatch/{event_id}", dependencies=[Depends(verify_admin_token)])
 async def dispatch_incident(event_id: str, request: Optional[DispatchRequest] = None):
     """
     FR-3.3 One-Click Dispatch Action:
@@ -84,7 +85,7 @@ async def dispatch_incident(event_id: str, request: Optional[DispatchRequest] = 
         "notification_dispatched": simulated_sms
     }
 
-@router.post("/events/{event_id}/resolve")
+@router.post("/events/{event_id}/resolve", dependencies=[Depends(verify_admin_token)])
 async def resolve_incident(event_id: str):
     """
     Frees the assigned unit (sets status back to AVAILABLE), marks the incident RESOLVED,

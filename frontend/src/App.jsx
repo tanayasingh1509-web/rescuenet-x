@@ -9,6 +9,7 @@ import PhoneSimulatorModal from './components/PhoneSimulatorModal';
 import PitchDeckModal from './components/PitchDeckModal';
 import ResponderTerminalModal from './components/ResponderTerminalModal';
 import ApiKeyModal from './components/ApiKeyModal';
+import { authFetch } from './utils/auth';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
 const WS_URL = import.meta.env.VITE_WS_URL || (typeof window !== 'undefined' 
@@ -152,7 +153,7 @@ export default function App() {
   const handleDispatch = async (eventId) => {
     playTacticalBeep(1100, 0.2);
     try {
-      const response = await fetch(`${API_BASE}/api/dispatch/${eventId}`, {
+      const response = await authFetch(`${API_BASE}/api/dispatch/${eventId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event_id: eventId })
@@ -176,6 +177,26 @@ export default function App() {
       }
     } catch (e) {
       console.error('Dispatch failed:', e);
+    }
+  };
+
+  // Resolve Incident Action (frees assigned unit)
+  const handleResolve = async (eventId) => {
+    try {
+      const response = await authFetch(`${API_BASE}/api/events/${eventId}/resolve`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+      if (data.status === 'resolved') {
+        setEvents((prev) =>
+          prev.map((e) => (e.id === eventId ? { ...e, status: 'RESOLVED' } : e))
+        );
+        if (selectedEvent && selectedEvent.id === eventId) {
+          setSelectedEvent((prev) => ({ ...prev, status: 'RESOLVED' }));
+        }
+      }
+    } catch (e) {
+      console.error('Resolve incident failed:', e);
     }
   };
 
@@ -234,7 +255,7 @@ export default function App() {
   // Reset demo store
   const handleReset = async () => {
     try {
-      await fetch(`${API_BASE}/api/simulate/reset`, { method: 'POST' });
+      await authFetch(`${API_BASE}/api/simulate/reset`, { method: 'POST' });
       setEvents([]);
       setSelectedEvent(null);
       // Reload baseline

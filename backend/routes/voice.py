@@ -1,13 +1,15 @@
 """
 Twilio VoiceBridge Telephony Routes (FR-1)
 Handles:
-- FR-1.1: DTMF Interactive Menu (1: Police, 2: Ambulance, 3: Rescue) with Sector lookup
+- FR-1.1: DTMF Interactive Menu with Sector lookup
 - FR-1.2: Speech Capture & Whisper STT
 - FR-1.3: Entity Extraction & Structured Payload Broadcast
-- Location resolution via sector lookup or non-merging jitter coordinates
+- Phase 2.4: SSRF protection on RecordingUrl (strictly api.twilio.com over HTTPS, max 10MB)
+- Phase 2.5: Twilio webhook signature verification
+- Phase 2.8: Rate limiting per IP
 """
 
-from fastapi import APIRouter, Request, Response, Form, UploadFile, File
+from fastapi import APIRouter, Request, Response, Form, UploadFile, File, HTTPException, status
 from fastapi.responses import PlainTextResponse
 import os
 import time
@@ -22,6 +24,12 @@ from ..schemas import EventPayload, Coordinates
 from ..ai_engine import process_audio_transcript
 from ..agentic_dispatcher import run_agentic_pipeline
 from ..websocket_manager import ws_manager
+from ..security import (
+    is_safe_twilio_recording_url,
+    verify_twilio_signature,
+    voice_webhook_limiter,
+    MAX_AUDIO_SIZE_BYTES
+)
 
 router = APIRouter(prefix="/api/voice", tags=["Voice Telephony"])
 
@@ -65,7 +73,6 @@ def resolve_voice_coordinates(
             if key in s_lower or s_lower in key:
                 return s_lat, s_lng, name, False
 
-    # Jitter point (+/- 0.005 to 0.015 degrees) so separate callers never collide
     jitter_lat = DEFAULT_CENTER_LAT + random.uniform(-0.012, 0.012)
     jitter_lng = DEFAULT_CENTER_LNG + random.uniform(-0.012, 0.012)
     sec_name = sector_input if sector_input else "Unknown Sector (Cell Jittered)"
@@ -75,15 +82,17 @@ def resolve_voice_coordinates(
 async def voice_incoming(request: Request):
     """
     FR-1.1 DTMF Interactive Menu:
-    - Press 1 -> Police
-    - Press 2 -> Ambulance / Medical
-    - Press 3 -> Trapped / Rescue
-    - Allows sector digit 1-4
-    - If no key pressed -> capture free-form voice message (FR-1.2)
+    - Press 1 -> Police, 2 -> Ambulance, 3 -> Rescue
     """
-    response = VoiceResponse()
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    voice_webhook_limiter.check(client_ip)
 
-    # Create Gather verb for DTMF keypad input (timeout 4 seconds)
+    # Validate Twilio signature
+    form_params = dict(await request.form())
+    if not verify_twilio_signature(request, form_params):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Twilio signature mismatch")
+
+    response = VoiceResponse()
     gather = Gather(
         num_digits=2,
         action="/api/voice/menu-select",
@@ -101,7 +110,6 @@ async def voice_incoming(request: Request):
     )
     response.append(gather)
 
-    # FR-1.2: If no key pressed, record free-form voice message
     response.say("Recording your voice report now. Please speak clearly after the tone.", voice="Polly.Joanna")
     response.record(
         action="/api/voice/process-audio",
@@ -118,6 +126,7 @@ async def voice_incoming(request: Request):
 
 @router.post("/menu-select")
 async def voice_menu_select(
+    request: Request,
     Digits: Optional[str] = Form(None),
     From: Optional[str] = Form("+919999000000"),
     CallSid: Optional[str] = Form(None),
@@ -125,13 +134,14 @@ async def voice_menu_select(
     lng: Optional[float] = Form(None),
     sector: Optional[str] = Form(None)
 ):
-    """
-    Handles keypad DTMF digit selection:
-    1 -> Police
-    2 -> Ambulance
-    3 -> Trapped / Rescue
-    Optional 2nd digit -> Sector (1 to 4)
-    """
+    """Handles keypad DTMF digit selection."""
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    voice_webhook_limiter.check(client_ip)
+
+    form_params = dict(await request.form())
+    if not verify_twilio_signature(request, form_params):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Twilio signature mismatch")
+
     response = VoiceResponse()
     digits = Digits or "3"
     primary_digit = digits[0]
@@ -148,7 +158,6 @@ async def voice_menu_select(
     response.say(f"Emergency received for {desc}. Immediate dispatch initiated. Stay on the line or move to safe ground.", voice="Polly.Joanna")
     response.hangup()
 
-    # Resolve coordinates via sector lookup or jitter
     ev_lat, ev_lng, sec_name, is_loc_unknown = resolve_voice_coordinates(
         lat=lat,
         lng=lng,
@@ -176,6 +185,7 @@ async def voice_menu_select(
 
 @router.post("/process-audio")
 async def voice_process_audio(
+    request: Request,
     RecordingUrl: Optional[str] = Form(None),
     RecordingSid: Optional[str] = Form(None),
     From: Optional[str] = Form("+919999111222"),
@@ -184,33 +194,41 @@ async def voice_process_audio(
     sector: Optional[str] = Form(None)
 ):
     """
-    FR-1.2 & FR-1.3:
-    Processes voice recording:
-    1. Downloads audio from Twilio / local storage
-    2. Runs Whisper STT (without dummy text fabrication on silence/corruption)
-    3. Runs entity extraction
-    4. Runs Agentic Dispatcher (dedup, urgency, routing)
-    5. Pushes Section 4.5 payload to WebSocket
+    Processes voice recording with SSRF protection and rate limiting.
     """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    voice_webhook_limiter.check(client_ip)
+
+    form_params = dict(await request.form())
+    if not verify_twilio_signature(request, form_params):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Twilio signature mismatch")
+
     response = VoiceResponse()
     response.say("Emergency report captured. Rescue dispatch units have been notified.", voice="Polly.Joanna")
 
     temp_audio_path = str(AUDIO_UPLOAD_DIR / f"{RecordingSid or uuid.uuid4().hex[:8]}.wav")
 
-    # Download from Twilio if remote URL provided
+    # Phase 2.4: SSRF Guard on Twilio RecordingUrl
     if RecordingUrl:
-        try:
-            r = requests.get(f"{RecordingUrl}.wav", timeout=6)
-            if r.status_code == 200:
-                with open(temp_audio_path, "wb") as f:
-                    f.write(r.content)
-        except Exception as e:
-            print(f"[VOICE] Error fetching Twilio recording: {e}")
+        if is_safe_twilio_recording_url(RecordingUrl):
+            try:
+                fetch_url = f"{RecordingUrl}.wav" if not RecordingUrl.endswith(".wav") else RecordingUrl
+                with requests.get(fetch_url, timeout=5, stream=True) as r:
+                    if r.status_code == 200:
+                        downloaded = 0
+                        with open(temp_audio_path, "wb") as f:
+                            for chunk in r.iter_content(chunk_size=8192):
+                                downloaded += len(chunk)
+                                if downloaded > MAX_AUDIO_SIZE_BYTES:
+                                    raise ValueError("Audio recording exceeds 10 MB maximum allowed size")
+                                f.write(chunk)
+            except Exception as e:
+                print(f"[VOICE] Error fetching Twilio recording: {e}")
+        else:
+            print(f"[SECURITY] Blocked SSRF attempt: RecordingUrl '{RecordingUrl}' host is not api.twilio.com over HTTPS.")
 
-    # Process through AI pipeline (if file missing or corrupt, returns MANUAL_REVIEW with 0.3 conf)
     extracted = process_audio_transcript(temp_audio_path)
 
-    # Resolve coordinates via sector hint or jitter
     sector_candidate = sector or extracted.get("sector_hint")
     ev_lat, ev_lng, sec_name, is_loc_unknown = resolve_voice_coordinates(
         lat=lat,
@@ -218,7 +236,6 @@ async def voice_process_audio(
         sector_input=sector_candidate
     )
 
-    # Construct Section 4.5 payload derived directly from extraction
     event_payload = EventPayload(
         category=extracted.get("category", "UNKNOWN"),
         coordinates=Coordinates(lat=ev_lat, lng=ev_lng),

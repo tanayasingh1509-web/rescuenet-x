@@ -4,6 +4,7 @@ Supports automatic .env loading for Google Gemini, Mapbox, and Twilio credential
 """
 
 import os
+import secrets
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -32,36 +33,30 @@ def load_env_file():
 # Load environment variables on startup
 load_env_file()
 
+# Admin Token Initialization
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+if not ADMIN_TOKEN:
+    ADMIN_TOKEN = secrets.token_urlsafe(32)
+    os.environ["ADMIN_TOKEN"] = ADMIN_TOKEN
+    print(f"[SECURITY] Generated initial ADMIN_TOKEN: {ADMIN_TOKEN}")
+
+# Allowed CORS Origins (no wildcard with credentials)
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000"
+)
+ALLOWED_ORIGINS_LIST = [orig.strip() for orig in ALLOWED_ORIGINS.split(",") if orig.strip()]
+
 def save_env_keys(key_dict: dict):
-    """Safely writes or updates environment keys in .env and os.environ."""
-    existing_lines = []
-    existing_keys = set()
-    if ENV_PATH.exists():
-        with open(ENV_PATH, "r", encoding="utf-8") as f:
-            for line in f:
-                stripped = line.strip()
-                if stripped and not stripped.startswith("#") and "=" in stripped:
-                    k, _ = stripped.split("=", 1)
-                    k = k.strip()
-                    if k in key_dict:
-                        existing_lines.append(f"{k}={key_dict[k]}\n")
-                        existing_keys.add(k)
-                        continue
-                existing_lines.append(line)
+    """Delegates to hardened atomic security writer."""
+    from .security import secure_save_env_keys
+    secure_save_env_keys(key_dict)
 
-    for k, v in key_dict.items():
-        if k not in existing_keys:
-            existing_lines.append(f"{k}={v}\n")
-        os.environ[k] = str(v)
-
-    with open(ENV_PATH, "w", encoding="utf-8") as f:
-        f.writelines(existing_lines)
-
-# Google Gemini API Configuration (for high-accuracy cloud LLM entity & severity extraction)
+# Google Gemini API Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
-# Ollama & Whisper configuration (local fallback)
+# Ollama & Whisper configuration
 OLLAMA_ENDPOINT = os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434/api/generate")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
 DEFAULT_WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
@@ -75,13 +70,13 @@ AUDIO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 AUDIO_SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
 
-# Mapbox Access Token (for vector GIS mapping)
+# Mapbox Access Token
 MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN", os.getenv("VITE_MAPBOX_TOKEN", ""))
 
-# Google Maps API Key (for high-fidelity GIS tactical satellite & vector mapping)
+# Google Maps API Key
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", os.getenv("VITE_GOOGLE_MAPS_API_KEY", ""))
 
-# Twilio configuration (for live webhooks via Ngrok or local testing)
+# Twilio configuration
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
@@ -91,6 +86,6 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
 DEBUG = os.getenv("DEBUG", "True").lower() == "true"
 
-# Default City Center for demo GIS (e.g. National Capital Region / Flood-prone river basin)
+# Default City Center for demo GIS
 DEFAULT_CENTER_LAT = 28.6139
 DEFAULT_CENTER_LNG = 77.2090

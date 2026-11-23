@@ -3,6 +3,7 @@ import {
   X, Key, CheckCircle2, AlertTriangle, Eye, EyeOff,
   ExternalLink, Loader2, Save, ShieldCheck, Sparkles, Radio
 } from 'lucide-react';
+import { authFetch } from '../utils/auth';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
 
@@ -41,7 +42,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
     if (isOpen) {
       setSaveSuccess(false);
       setGeminiTestStatus(null);
-      fetch(`${API_BASE}/api/config/keys`)
+      authFetch(`${API_BASE}/api/config/keys`)
         .then((r) => r.json())
         .then((data) => {
           setMaskedStatuses(data);
@@ -59,7 +60,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
     setIsTestingGemini(true);
     setGeminiTestStatus(null);
     try {
-      const res = await fetch(`${API_BASE}/api/config/test-gemini`, {
+      const res = await authFetch(`${API_BASE}/api/config/test-gemini`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ api_key: geminiKey.includes('••') ? undefined : geminiKey })
@@ -91,7 +92,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
     if (twilioPhone) payload.twilio_phone_number = twilioPhone;
 
     try {
-      const res = await fetch(`${API_BASE}/api/config/keys`, {
+      const res = await authFetch(`${API_BASE}/api/config/keys`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
