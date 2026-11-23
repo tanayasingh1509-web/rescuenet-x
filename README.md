@@ -45,15 +45,15 @@ REAL-TIME COMMAND CENTER (<50ms via WebSockets)
 
 | Layer | Implementation |
 |---|---|
-| **Backend** | FastAPI (Async, WebSockets, Python 3.13) |
-| **Speech-to-Text** | OpenAI Whisper (`whisper-base` with auto-downgrade to `whisper-tiny` if latency > 1.5s) |
-| **NLP Entity Extraction** | Ollama Llama-3 (`http://localhost:11434/api/generate`) with resilient offline regex/heuristic fallback |
-| **Computer Vision** | YOLOv11 (`yolo11n.pt`) + OpenCV crisis spectrum feature extraction |
-| **Image Deduplication** | 64-bit Perceptual Hashing (pHash via `imagehash`) |
+| **Backend** | FastAPI (Async, WebSockets, Python 3.11+) |
+| **Speech-to-Text** | OpenAI Whisper (Local PyTorch) with fast heuristic regex fallback |
+| **NLP Entity Extraction** | Google Gemini / Ollama Llama-3 with offline regex fallback |
+| **Computer Vision** | YOLO11n (`yolo11n.pt`, person counting) + color/edge spectrum heuristic (capped at 0.80) + optional Gemini vision |
+| **Image Deduplication** | 64-bit Perceptual Hashing (pHash via `imagehash`) + category + 30-min window |
 | **Agentic Dispatch** | State-flow agentic dispatcher (dedup node, urgency scoring node, Haversine routing node) |
-| **GIS & Mapping** | Mapbox GL JS + instant offline fallback to **Leaflet + OpenStreetMap** |
-| **Frontend** | React.js + TailwindCSS + Lucide Icons + Web Audio API tactical sound synthesis |
-| **Data Store** | In-memory thread-safe store with cluster management and fleet tracking |
+| **GIS & Mapping** | Google Maps (Tactical Dark & Satellite) + Carto Dark (Leaflet/OSM) + Mapbox Vector |
+| **Frontend** | React 19 + TailwindCSS + Lucide Icons + Web Audio API sound synthesis |
+| **Data Store** | SQLite persistence with async locking and fleet tracking |
 
 ---
 
@@ -86,16 +86,32 @@ All events emitted over WebSockets and REST conform strictly to this contract:
 - (Optional) Ollama running locally with `ollama run llama3` (if not running, the built-in resilient offline fallback automatically takes over)
 - (Optional) Ngrok for live inbound Twilio phone calls
 
-### Option 1: One-Click Windows Launcher (Recommended)
-Simply double-click `start.bat` or run:
-```cmd
-start.bat
-```
-This automatically starts the backend server, launches the production dashboard, and opens `http://localhost:8000/` in your browser.
-
-### Option 2: Manual Terminal Execution
+### Option 1: Docker (Recommended for Reproducibility)
 ```bash
-python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+docker compose up --build
+```
+This builds both the frontend and backend in a multi-stage container and exposes the application on `http://localhost:8000/`.
+
+### Option 2: One-Click Launchers
+- **Windows:** Double click `start.bat`
+- **Linux / macOS:** Run `./start.sh`
+
+### Option 3: Manual Execution
+```bash
+# Backend
+pip install -r backend/requirements.txt
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+# Frontend (optional for development hot-reloading)
+cd frontend
+npm install
+npm run build
+```
+
+### Pre-Commit Secret Scanner
+To activate automated secret scanning before every git commit:
+```bash
+git config core.hooksPath .githooks
 ```
 The unified backend serves both the API and the React frontend at:
 - **Command Dashboard:** `http://localhost:8000/` (or `http://localhost:8000/dashboard`)
@@ -152,22 +168,19 @@ To receive real phone calls from any GSM mobile phone:
 
 | Component | Status | Details |
 |---|---|---|
-| **FastAPI Backend & Routes** | **100% Live** | All routes (`/api/voice/*`, `/api/report/*`, `/api/dispatch/*`, `/api/simulate/*`) fully operational |
-| **Real-time WebSockets** | **100% Live** | Sub-10ms event broadcasting to connected dashboards |
-| **OpenAI Whisper STT** | **100% Live** | PyTorch local CPU inference with base & tiny models cached |
-| **Computer Vision (YOLOv11)** | **100% Live** | Ultralytics YOLOv11 nano model loaded and classifying images |
-| **Perceptual Hashing (pHash)** | **100% Live** | 64-bit image hash + Hamming distance deduplication |
-| **Agentic Dispatcher** | **100% Live** | Spatial deduplication (100m), image dedup (500m), urgency scoring, Haversine routing |
-| **React + Leaflet/OSM Map** | **100% Live** | Interactive map, color-coded severity pins, radar pulses, popups |
-| **Mapbox GL JS** | **100% Live with Fallback** | Instant toggle to Leaflet/OSM when token is not present |
-| **Hazard Density Heatmap** | **100% Live** | Toggleable crisis density heatmap overlay on the GIS tactical map |
-| **Twilio Telephony** | **Live-Ready + Offline Backup** | Real TwiML webhooks live with Ngrok; local `/api/simulate/voice` backup for offline judging |
-| **Phone Simulator Handset** | **100% Live** | Interactive on-screen 2G phone dialer calling `/api/voice/incoming` & `/api/voice/menu-select` |
-| **Pitch Deck Slides** | **100% Live** | Built-in 6-slide presentation deck explaining vision, architecture, and impact |
-| **Citizen SOS PWA** | **100% Live** | Installable mobile web app with offline service worker caching |
-| **Responder Radio Terminal** | **100% Live** | Tactical on-ground SMS/radio receiver console tracking active field missions |
-| **First Responder Units** | **Simulated Fleet** | Realistic mock fleet (NDRF Squad, Trauma Ambulance, Hazmat Tender, Police PCR) with live status tracking |
-| **Field SMS/Radio Dispatch** | **Simulated Alert** | Automated dispatch notification generated with unit contact and ETA upon 1-click dispatch |
+| **FastAPI Backend & Routes** | **Live** | All routes (`/api/voice/*`, `/api/report/*`, `/api/dispatch/*`, `/api/simulate/*`, `/api/config/*`) fully operational |
+| **Real-time WebSockets** | **Live** | Real-time event broadcasting to connected dashboards; measured round-trip latency reported dynamically |
+| **OpenAI Whisper STT** | **Live / Fallback** | Local PyTorch inference when installed; fast heuristic text parser fallback when uninstalled or offline |
+| **Computer Vision** | **Live Hybrid** | YOLO11n (`yolo11n.pt`) is used specifically for person counting; color/edge heuristic provides weak triage hints (capped at 0.80, operator confirmation required); Gemini Vision optional for verified classification |
+| **Perceptual Hashing (pHash)** | **Live** | 64-bit image hash + Hamming distance + category match + 30-min window deduplication |
+| **Agentic Dispatcher** | **Live** | State-flow agentic dispatcher with urgency scoring, dynamic unit state allocation (AVAILABLE -> EN_ROUTE), and Haversine routing |
+| **GIS & Tactical Map** | **Live** | Google Maps (Tactical Dark & Satellite) with clean fallback to Leaflet / Carto Dark & Mapbox Vector |
+| **Hazard Density Zones** | **Live** | Dynamic hazard radius circles reflecting incident severity |
+| **Twilio Telephony** | **Live-Ready / Simulated** | Real TwiML webhooks live when credentials + tunnel are provided; on-screen Phone Simulator for local testing |
+| **Citizen SOS PWA** | **Live** | Mobile-responsive PWA with geolocation gating, offline IndexedDB outbox, and auto-sync on reconnect |
+| **Responder Radio Terminal** | **Live** | Tactical on-ground SMS/radio receiver console tracking active field missions |
+| **First Responder Units** | **Simulated Fleet** | Simulated municipal fleet (NDRF Squad, Trauma Ambulance, Hazmat Tender, Police PCR) with state tracking |
+| **Field SMS/Radio Dispatch** | **Simulated Alert** | Automated dispatch notification generated with unit contact and ETA upon dispatch |
 
 ---
 
