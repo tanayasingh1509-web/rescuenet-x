@@ -1,8 +1,8 @@
 """
 AI Engine for RESCUENET-X
 Handles:
-1. Speech-to-Text via OpenAI Whisper (auto-downgrading from base to tiny if latency > 1.5s)
-2. NLP Entity & Severity Extraction via Ollama Llama-3 (with resilient offline fallback)
+1. Speech-to-Text via OpenAI Whisper (auto-downgrading from base to tiny if pure inference latency > 1.5s)
+2. NLP Entity & Severity Extraction via Google Gemini API or Ollama Llama-3 (with resilient offline fallback)
 """
 
 import os
@@ -12,37 +12,16 @@ import re
 import wave
 import numpy as np
 import requests
-import whisper
+from typing import Optional, Dict, Any
+
 from .config import OLLAMA_ENDPOINT, OLLAMA_MODEL, DEFAULT_WHISPER_MODEL, GEMINI_API_KEY, GEMINI_MODEL
 
-def extract_with_gemini(raw_text: str, api_key: str) -> dict:
-    """Extracts structured disaster crisis data using Google Gemini API."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={api_key}"
-    system_instruction = (
-        "You are an emergency disaster response parser. Analyze the text and return valid JSON with: "
-        'category (one of "POLICE", "AMBULANCE", "RESCUE", "FLOOD", "FIRE", "UNKNOWN"), '
-        "severity (integer 1 to 10 based on threat to human life), "
-        "casualty_count (integer estimated casualties or trapped people), "
-        "summary (1-sentence concise tactical emergency briefing)."
-    )
-    payload = {
-        "contents": [{"parts": [{"text": f"Emergency crisis transcript: \"{raw_text}\""}]}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "temperature": 0.1
-        },
-        "systemInstruction": {"parts": [{"text": system_instruction}]}
-    }
-    response = requests.post(url, json=payload, timeout=6)
-    if response.status_code == 200:
-        data = response.json()
-        candidates = data.get("candidates", [])
-        if candidates:
-            parts = candidates[0].get("content", {}).get("parts", [])
-            if parts:
-                text = parts[0].get("text", "{}")
-                return json.loads(text)
-    raise RuntimeError(f"Gemini API returned status {response.status_code}: {response.text}")
+# Guard Whisper import so the application boots gracefully if whisper is absent
+try:
+    import whisper
+except ImportError:
+    whisper = None
+    print("[AI-ENGINE] OpenAI Whisper is not installed. Voice STT will run in fallback/manual-review mode.")
 
 # Global model cache
 current_model_name = DEFAULT_WHISPER_MODEL
@@ -51,12 +30,70 @@ stt_model = None
 def get_whisper_model(model_name: str = "base"):
     """Lazy loader for whisper models."""
     global stt_model, current_model_name
+    if whisper is None:
+        return None
     if stt_model is None or current_model_name != model_name:
         print(f"[AI-ENGINE] Loading Whisper model: '{model_name}'...")
-        stt_model = whisper.load_model(model_name)
-        current_model_name = model_name
-        print(f"[AI-ENGINE] Whisper '{model_name}' loaded successfully.")
+        try:
+            stt_model = whisper.load_model(model_name)
+            current_model_name = model_name
+            print(f"[AI-ENGINE] Whisper '{model_name}' loaded successfully.")
+        except Exception as e:
+            print(f"[AI-ENGINE] Failed to load Whisper model '{model_name}': {e}")
+            stt_model = None
     return stt_model
+
+def extract_with_gemini(raw_text: str, api_key: str) -> Optional[dict]:
+    """
+    Extracts structured disaster crisis data using Google Gemini API.
+    Sends API key in x-goog-api-key header (NOT in URL). Fails soft with logged reason.
+    """
+    if not api_key:
+        return None
+
+    active_model = os.getenv("GEMINI_MODEL", GEMINI_MODEL)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{active_model}:generateContent"
+    headers = {
+        "x-goog-api-key": api_key,
+        "Content-Type": "application/json"
+    }
+
+    system_instruction = (
+        "You are an emergency disaster response parser. Analyze the text and return valid JSON with: "
+        'category (one of "POLICE", "AMBULANCE", "RESCUE", "FLOOD", "FIRE", "UNKNOWN"), '
+        "severity (integer 1 to 10 based on threat to human life), "
+        "casualty_count (integer estimated casualties or trapped people), "
+        "sector_hint (short string indicating landmark, sector, or location if mentioned, else null), "
+        "summary (1-sentence concise tactical emergency briefing)."
+    )
+
+    payload = {
+        "contents": [{"parts": [{"text": f"Emergency crisis transcript: \"{raw_text}\""}]}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "temperature": 0.1
+        },
+        "systemInstruction": {"parts": [{"text": system_instruction}]}
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=6)
+        if response.status_code == 200:
+            data = response.json()
+            candidates = data.get("candidates", [])
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if parts:
+                    text = parts[0].get("text", "{}")
+                    parsed = json.loads(text)
+                    if isinstance(parsed, dict) and "category" in parsed:
+                        return parsed
+        else:
+            print(f"[AI-ENGINE] Gemini API returned error ({response.status_code}): {response.text}")
+    except Exception as e:
+        print(f"[AI-ENGINE] Gemini extraction failed soft: {e}")
+
+    return None
 
 def load_wav_pcm_fallback(audio_file_path: str):
     """
@@ -69,7 +106,11 @@ def load_wav_pcm_fallback(audio_file_path: str):
             sampwidth = wf.getsampwidth()
             framerate = wf.getframerate()
             n_frames = wf.getnframes()
+            if n_frames == 0:
+                return None
             raw_bytes = wf.readframes(n_frames)
+            if not raw_bytes:
+                return None
 
             if sampwidth == 2:
                 dtype = np.int16
@@ -95,6 +136,10 @@ def load_wav_pcm_fallback(audio_file_path: str):
                 indices = np.linspace(0, len(audio_data) - 1, int(len(audio_data) * 16000 / framerate))
                 audio_data = np.interp(indices, np.arange(len(audio_data)), audio_data)
 
+            # Check if audio is completely silent
+            if np.max(np.abs(audio_data)) < 1e-4:
+                return None
+
             return audio_data
     except Exception as e:
         print(f"[AI-ENGINE] WAV fallback reader error: {e}")
@@ -102,14 +147,13 @@ def load_wav_pcm_fallback(audio_file_path: str):
 
 def offline_heuristic_nlp_extractor(raw_text: str) -> dict:
     """
-    Offline resilient heuristic extractor used if Ollama is unreachable.
-    Guarantees the safe baseline requested (category RESCUE, severity 7, casualty_count 1)
-    while extracting meaningful signals from real disaster speech.
+    Offline resilient heuristic extractor used if LLMs are unreachable.
+    Extracts signals from disaster speech text.
     """
     text_lower = raw_text.lower()
 
     # Determine category
-    category = "RESCUE"
+    category = "UNKNOWN"
     if any(k in text_lower for k in ["fire", "flames", "smoke", "burning", "blaze", "gas leak"]):
         category = "FIRE"
     elif any(k in text_lower for k in ["flood", "water", "drown", "submerged", "river", "overflow"]):
@@ -120,10 +164,11 @@ def offline_heuristic_nlp_extractor(raw_text: str) -> dict:
         category = "POLICE"
     elif any(k in text_lower for k in ["collapse", "trapped", "rubble", "earthquake", "stuck", "rescue"]):
         category = "RESCUE"
+    else:
+        category = "RESCUE"  # General emergency default
 
     # Extract casualty count
     casualty_count = 1
-    # Look for patterns like "5 people", "3 persons", "two injured", "4 trapped"
     num_words = {
         "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
         "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10
@@ -149,10 +194,9 @@ def offline_heuristic_nlp_extractor(raw_text: str) -> dict:
         severity = 6
 
     # Extract sector / location hint if mentioned
-    sector_match = re.search(r'(sector\s*\d+|block\s*[a-z0-9]+|near\s+[a-z\s]+|bridge|highway|hospital|market)', text_lower)
+    sector_match = re.search(r'(sector\s*\d+|block\s*[a-z0-9]+|near\s+[a-z0-9\s]+|bridge|highway|hospital|market|river)', text_lower)
     sector_hint = sector_match.group(0).title() if sector_match else "Central Disaster Sector"
 
-    # Tactical summary
     summary = f"{category} crisis reported near {sector_hint}: approx {casualty_count} person(s) at risk. {raw_text[:120]}".strip()
 
     return {
@@ -165,67 +209,97 @@ def offline_heuristic_nlp_extractor(raw_text: str) -> dict:
 
 def process_audio_transcript(audio_file_path: str) -> dict:
     """
-    Transcribes audio file using Whisper and extracts structured crisis data using Ollama Llama-3.
-    Includes:
-    - Auto-downgrade to whisper-tiny if inference exceeds 1.5s
-    - Resilient offline fallback if Ollama is unreachable
+    Transcribes audio file using Whisper and extracts structured crisis data.
+    Strict rules:
+    - Never fabricates a transcript when audio is silent, corrupt, or missing.
+    - If STT fails, returns status MANUAL_REVIEW, confidence 0.3, verified=False, summary 'Unintelligible audio, operator review required'.
+    - Times whisper STT inference exclusively without model loading time.
     """
     global current_model_name
+
+    # 1. Validate file presence and non-zero content
+    if not os.path.exists(audio_file_path) or os.path.getsize(audio_file_path) < 100:
+        print("[AI-ENGINE] Audio file is missing, empty, or corrupt (<100 bytes).")
+        return {
+            "category": "UNKNOWN",
+            "severity": 5,
+            "casualty_count": 0,
+            "summary": "Unintelligible audio, operator review required",
+            "sector_hint": "Sector-Unknown",
+            "raw_transcript": None,
+            "confidence": 0.3,
+            "verified": False,
+            "status": "MANUAL_REVIEW",
+            "stt_failed": True,
+            "stt_latency_ms": 0
+        }
+
     raw_text = ""
     stt_duration = 0.0
 
-    # 1. Transcribe speech
+    # 2. Transcribe speech via Whisper
     try:
-        t0 = time.time()
         model = get_whisper_model(current_model_name)
-
-        try:
-            # First attempt: standard whisper transcribe
-            transcription_result = model.transcribe(audio_file_path, fp16=False)
-            raw_text = transcription_result.get("text", "").strip()
-        except Exception as whisper_err:
-            # If ffmpeg missing or audio error, try wav pcm fallback
-            print(f"[AI-ENGINE] Whisper direct transcribe fallback triggered: {whisper_err}")
-            pcm_audio = load_wav_pcm_fallback(audio_file_path)
-            if pcm_audio is not None and len(pcm_audio) > 0:
-                transcription_result = model.transcribe(pcm_audio, fp16=False)
-                raw_text = transcription_result.get("text", "").strip()
-            else:
-                # If audio is empty or dummy, fallback text for demo continuity
-                raw_text = "Emergency report. Severe flooding and trapped citizens require immediate evacuation."
-
-        stt_duration = time.time() - t0
-        print(f"[AI-ENGINE] STT completed in {stt_duration:.2f}s using '{current_model_name}': \"{raw_text}\"")
-
-        # RISK 1 MITIGATION: Auto-downgrade to whisper-tiny if inference exceeds 1.5s
-        if stt_duration > 1.5 and current_model_name != "tiny":
-            print(f"[AI-ENGINE] STT latency ({stt_duration:.2f}s) exceeded 1.5s budget. Auto-downgrading Whisper model to 'tiny'.")
+        if model is not None:
+            # Time purely inference, NOT model loading
+            t0 = time.time()
             try:
-                get_whisper_model("tiny")
-            except Exception as e:
-                print(f"[AI-ENGINE] Failed to downgrade model to tiny: {e}")
+                transcription_result = model.transcribe(audio_file_path, fp16=False)
+                raw_text = transcription_result.get("text", "").strip()
+            except Exception as whisper_err:
+                print(f"[AI-ENGINE] Whisper standard transcribe error: {whisper_err}. Trying PCM fallback...")
+                pcm_audio = load_wav_pcm_fallback(audio_file_path)
+                if pcm_audio is not None and len(pcm_audio) > 0:
+                    transcription_result = model.transcribe(pcm_audio, fp16=False)
+                    raw_text = transcription_result.get("text", "").strip()
 
+            stt_duration = time.time() - t0
+            print(f"[AI-ENGINE] STT inference completed in {stt_duration:.2f}s using '{current_model_name}': \"{raw_text}\"")
+
+            # Auto-downgrade to whisper-tiny if inference exceeds 1.5s
+            if stt_duration > 1.5 and current_model_name != "tiny":
+                print(f"[AI-ENGINE] STT inference ({stt_duration:.2f}s) exceeded 1.5s budget. Downgrading Whisper model to 'tiny'.")
+                try:
+                    get_whisper_model("tiny")
+                except Exception as e:
+                    print(f"[AI-ENGINE] Failed to downgrade Whisper model to tiny: {e}")
+        else:
+            print("[AI-ENGINE] Whisper model unavailable.")
     except Exception as e:
-        print(f"[AI-ENGINE] STT error: {e}")
-        raw_text = "Emergency crisis assistance requested immediately."
+        print(f"[AI-ENGINE] STT processing error: {e}")
 
+    # 3. Check for silent / failed STT
+    if not raw_text or len(raw_text.strip()) == 0:
+        print("[AI-ENGINE] No speech detected or STT returned empty. Marking for MANUAL_REVIEW.")
+        return {
+            "category": "UNKNOWN",
+            "severity": 5,
+            "casualty_count": 0,
+            "summary": "Unintelligible audio, operator review required",
+            "sector_hint": "Sector-Unknown",
+            "raw_transcript": None,
+            "confidence": 0.3,
+            "verified": False,
+            "status": "MANUAL_REVIEW",
+            "stt_failed": True,
+            "stt_latency_ms": int(stt_duration * 1000)
+        }
+
+    # 4. Extract structured crisis entities
     parsed_json = None
+    extraction_source = "heuristic"
 
     # Tier 1: Google Gemini API (if GEMINI_API_KEY is configured)
     active_gemini_key = os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY
     if active_gemini_key:
-        try:
-            print("[AI-ENGINE] Utilizing Google Gemini API for disaster intelligence parsing...")
-            parsed_json = extract_with_gemini(raw_text, active_gemini_key)
-            print(f"[AI-ENGINE] Gemini extraction success: {parsed_json.get('category')} Sev {parsed_json.get('severity')}")
-        except Exception as gemini_err:
-            print(f"[AI-ENGINE] Gemini API extraction failed ({gemini_err}). Falling back to Ollama / offline.")
+        parsed_json = extract_with_gemini(raw_text, active_gemini_key)
+        if parsed_json:
+            extraction_source = "gemini"
 
     # Tier 2: Ollama Local Llama-3 (if Gemini was not used or failed)
     if not parsed_json or not isinstance(parsed_json, dict) or "category" not in parsed_json:
-        # Extract structured entities via LLM (Ollama Llama-3)
         prompt = f"""SYSTEM PROMPT:
-You are a crisis intelligence parser. Analyze the given disaster transcript and return ONLY a JSON object with the following fields:
+You are a crisis intelligence parser. Analyze the given disaster transcript and return ONLY a JSON object with:
 - "category": Choose from ["POLICE", "AMBULANCE", "RESCUE", "FLOOD", "FIRE", "UNKNOWN"]
 - "severity": Integer from 1 to 10 based on threat to human life.
 - "casualty_count": Estimated number of injured/trapped people (Integer).
@@ -233,46 +307,71 @@ You are a crisis intelligence parser. Analyze the given disaster transcript and 
 
 TRANSCRIPT: "{raw_text}"
 """
-
         payload = {
             "model": OLLAMA_MODEL,
             "prompt": prompt,
             "stream": False,
             "format": "json"
         }
-
         try:
             response = requests.post(OLLAMA_ENDPOINT, json=payload, timeout=4)
             if response.status_code == 200:
                 resp_content = response.json().get("response", "{}")
-                parsed_json = json.loads(resp_content)
+                candidate = json.loads(resp_content)
+                if isinstance(candidate, dict) and "category" in candidate:
+                    parsed_json = candidate
+                    extraction_source = "ollama"
         except Exception as e:
-            print(f"[AI-ENGINE] Ollama unreachable ({e}). Using resilient offline fallback.")
+            print(f"[AI-ENGINE] Ollama unreachable ({e}). Using offline heuristic.")
 
-    # Tier 3: Hard Fallback Requirement:
-    # If Ollama and Gemini are unreachable or response isn't valid JSON, fall back to safe default
-    # enriched with our heuristic parser so the system never crashes
+    # Tier 3: Resilient offline heuristic
     if not parsed_json or not isinstance(parsed_json, dict) or "category" not in parsed_json:
         parsed_json = offline_heuristic_nlp_extractor(raw_text)
+        extraction_source = "heuristic"
 
-    # Ensure required fields conform strictly to contract
-    parsed_json["category"] = parsed_json.get("category", "RESCUE").upper()
-    valid_categories = ["POLICE", "AMBULANCE", "RESCUE", "FLOOD", "FIRE", "UNKNOWN"]
-    if parsed_json["category"] not in valid_categories:
-        parsed_json["category"] = "RESCUE"
-
-    try:
-        parsed_json["severity"] = max(1, min(10, int(parsed_json.get("severity", 7))))
-    except Exception:
-        parsed_json["severity"] = 7
+    # 5. Clean, validate, and compute derived confidence and verified status
+    cat = parsed_json.get("category", "UNKNOWN").upper()
+    valid_categories = {"POLICE", "AMBULANCE", "RESCUE", "FLOOD", "FIRE", "UNKNOWN"}
+    if cat not in valid_categories:
+        cat = "UNKNOWN"
 
     try:
-        parsed_json["casualty_count"] = max(0, int(parsed_json.get("casualty_count", 1)))
+        sev = max(1, min(10, int(parsed_json.get("severity", 7))))
     except Exception:
-        parsed_json["casualty_count"] = 1
+        sev = 7
 
-    parsed_json["summary"] = parsed_json.get("summary") or raw_text or "Emergency incident detected."
-    parsed_json["raw_transcript"] = raw_text
-    parsed_json["stt_latency_ms"] = int(stt_duration * 1000)
+    try:
+        cas = max(0, int(parsed_json.get("casualty_count", 0)))
+    except Exception:
+        cas = 0
 
-    return parsed_json
+    # Derive confidence and verified status from actual extraction fidelity
+    if extraction_source == "gemini":
+        confidence = 0.88
+        verified = True
+        status = "DISPATCHED"
+    elif extraction_source == "ollama":
+        confidence = 0.82
+        verified = True
+        status = "DISPATCHED"
+    else:
+        # Heuristic extraction
+        confidence = 0.75 if cat != "UNKNOWN" else 0.40
+        verified = False
+        status = "MANUAL_REVIEW" if confidence < 0.70 else "DISPATCHED"
+
+    summary = parsed_json.get("summary") or f"{cat} incident reported from voice transmission."
+
+    return {
+        "category": cat,
+        "severity": sev,
+        "casualty_count": cas,
+        "summary": summary,
+        "sector_hint": parsed_json.get("sector_hint", "Central Crisis Grid"),
+        "raw_transcript": raw_text,
+        "confidence": confidence,
+        "verified": verified,
+        "status": status,
+        "stt_failed": False,
+        "stt_latency_ms": int(stt_duration * 1000)
+    }

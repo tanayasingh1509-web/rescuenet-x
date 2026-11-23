@@ -10,6 +10,9 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
 ENV_PATH = PROJECT_ROOT / ".env"
 
+# Guard Ultralytics config directory inside project to prevent permission warnings
+os.environ.setdefault("YOLO_CONFIG_DIR", str(PROJECT_ROOT / ".ultralytics"))
+
 def load_env_file():
     """Lightweight zero-dependency .env loader."""
     if ENV_PATH.exists():

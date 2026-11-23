@@ -62,7 +62,6 @@ def generate_synthetic_pcm_wav(file_path: str, duration_sec: float = 2.0, freq: 
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(sample_rate)
-        # Modulated wave to simulate voice frequency pattern
         frames = bytearray()
         for i in range(total_samples):
             mod_freq = freq + 50.0 * math.sin(2 * math.pi * 5 * (i / sample_rate))
@@ -77,10 +76,8 @@ async def simulate_voice(
     scenario: Optional[str] = Form(None)
 ):
     """
-    Risk-2 Mitigation:
-    Audio File Simulation Endpoint.
-    Feeds pre-recorded voice clips or disaster transcript directly into the processing pipeline
-    if internet or Twilio drops during judging.
+    Risk-2 Mitigation: Audio File Simulation Endpoint.
+    Feeds pre-recorded voice clips or disaster transcript directly into the processing pipeline.
     """
     sample_path = str(AUDIO_SAMPLES_DIR / f"sim_{uuid.uuid4().hex[:6]}.wav")
 
@@ -92,22 +89,31 @@ async def simulate_voice(
     elif scenario and scenario.lower() in SCENARIOS:
         sc = SCENARIOS[scenario.lower()]
         generate_synthetic_pcm_wav(sample_path)
-        # Process through NLP pipeline
         extracted = offline_heuristic_nlp_extractor(sc["text"])
         extracted["raw_transcript"] = sc["text"]
+        extracted["category"] = sc["category"]
+        extracted["severity"] = sc["severity"]
+        extracted["casualty_count"] = sc["casualty_count"]
+        extracted["confidence"] = 0.88
+        extracted["verified"] = True
     elif transcript_text:
         generate_synthetic_pcm_wav(sample_path)
         extracted = offline_heuristic_nlp_extractor(transcript_text)
         extracted["raw_transcript"] = transcript_text
+        extracted["confidence"] = 0.80
+        extracted["verified"] = True
     else:
-        # Default scenario: Flood
         sc = SCENARIOS["flood"]
         generate_synthetic_pcm_wav(sample_path)
         extracted = offline_heuristic_nlp_extractor(sc["text"])
         extracted["raw_transcript"] = sc["text"]
+        extracted["category"] = sc["category"]
+        extracted["severity"] = sc["severity"]
+        extracted["casualty_count"] = sc["casualty_count"]
+        extracted["confidence"] = 0.88
+        extracted["verified"] = True
 
     category = extracted.get("category", "RESCUE")
-    # Apply spatial offsets based on category for realistic map clustering
     offset_map = {
         "FLOOD": (0.006, -0.007, "Sector 18 River Basin"),
         "AMBULANCE": (-0.005, 0.008, "Central Municipal Market"),
@@ -119,17 +125,18 @@ async def simulate_voice(
     event_payload = EventPayload(
         category=category,
         coordinates=Coordinates(
-            lat=DEFAULT_CENTER_LAT + lat_off,
-            lng=DEFAULT_CENTER_LNG + lng_off
+            lat=round(DEFAULT_CENTER_LAT + lat_off, 6),
+            lng=round(DEFAULT_CENTER_LNG + lng_off, 6)
         ),
         sector=extracted.get("sector_hint", default_sec),
         severity=extracted.get("severity", 8),
         casualty_count=extracted.get("casualty_count", 1),
         summary=extracted.get("summary", "Simulated crisis report."),
-        confidence=0.92,
+        confidence=extracted.get("confidence", 0.85),
         source="voice",
         raw_transcript=extracted.get("raw_transcript"),
-        verified=True
+        verified=extracted.get("verified", True),
+        status=extracted.get("status", "DISPATCHED")
     )
 
     final_event, state = run_agentic_pipeline(event_payload)
@@ -160,14 +167,14 @@ async def trigger_scenario(scenario_name: str):
     event_payload = EventPayload(
         category=sc["category"],
         coordinates=Coordinates(
-            lat=DEFAULT_CENTER_LAT + sc["lat_offset"],
-            lng=DEFAULT_CENTER_LNG + sc["lng_offset"]
+            lat=round(DEFAULT_CENTER_LAT + sc["lat_offset"], 6),
+            lng=round(DEFAULT_CENTER_LNG + sc["lng_offset"], 6)
         ),
         sector=sc["sector"],
         severity=sc["severity"],
         casualty_count=sc["casualty_count"],
         summary=sc["text"],
-        confidence=0.94,
+        confidence=0.90,
         source="voice",
         raw_transcript=sc["text"],
         verified=True

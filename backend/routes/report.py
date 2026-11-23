@@ -3,13 +3,14 @@ Visual Incident Verification and Digital/PWA Report Routes (FR-2)
 Handles:
 - FR-2.1: Image Classification (Flood, Fire, Collapse) with two-tier confidence logic
 - FR-2.2: Dynamic Severity Scoring
-- FR-2.3: Perceptual Hashing (pHash) Deduplication within 500m & Hamming < 5
+- FR-2.3: Perceptual Hashing (pHash) Deduplication within 500m, same category, 30m window
 """
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 import shutil
 import uuid
 import os
+import random
 from typing import Optional
 
 from ..config import IMAGE_UPLOAD_DIR, DEFAULT_CENTER_LAT, DEFAULT_CENTER_LNG
@@ -32,15 +33,13 @@ async def report_visual(
     Visual incident verification endpoint:
     1. Receives image upload
     2. Runs Computer Vision classification (Flood, Fire, Collapse)
-    3. Computes pHash and checks for duplicate images (< 500m, Hamming < 5)
+    3. Computes pHash and checks for duplicate images (< 500m, Hamming < 5, same category, 30m window)
     4. Evaluates two-tier confidence thresholds:
-       - < 0.70: MANUAL_REVIEW, not auto-dispatched
-       - >= 0.70 and < 0.85: DISPATCHED, unverified/low-confidence
-       - >= 0.85: DISPATCHED, verified
-    5. Dispatches nearest unit and streams via WebSocket
+       - Weak heuristic is capped at 0.80, status=MANUAL_REVIEW, verified=False
+       - Real classifier (Gemini Vision) allows >= 0.85, status=DISPATCHED, verified=True
+    5. Dispatches or queues nearest unit and streams via WebSocket (< 50ms)
     """
-    # Generate unique filename preserving extension
-    ext = os.path.splitext(image.filename)[1] or ".jpg"
+    ext = os.path.splitext(image.filename)[1] if image.filename else ".jpg"
     filename = f"{uuid.uuid4().hex[:10]}{ext}"
     saved_path = str(IMAGE_UPLOAD_DIR / filename)
 
@@ -53,14 +52,19 @@ async def report_visual(
     # Analyze image with Vision Engine
     vision_result = analyze_visual_disaster(saved_path)
 
-    # Coordinates fallback around default center if not supplied
-    event_lat = lat if lat is not None else (DEFAULT_CENTER_LAT - 0.003)
-    event_lng = lng if lng is not None else (DEFAULT_CENTER_LNG + 0.005)
+    is_loc_unknown = False
+    if lat is not None and lng is not None:
+        event_lat, event_lng = float(lat), float(lng)
+    else:
+        is_loc_unknown = True
+        # Apply jitter so distinct unlocated image reports do not falsely merge
+        event_lat = DEFAULT_CENTER_LAT + random.uniform(-0.010, 0.010)
+        event_lng = DEFAULT_CENTER_LNG + random.uniform(-0.010, 0.010)
 
     # Build canonical Section 4.5 event payload
     event_payload = EventPayload(
         category=vision_result["category"],
-        coordinates=Coordinates(lat=event_lat, lng=event_lng),
+        coordinates=Coordinates(lat=round(event_lat, 6), lng=round(event_lng, 6)),
         sector=sector or "Sector 4 - Commercial Zone",
         severity=vision_result["severity"],
         casualty_count=vision_result.get("person_count", 0),
@@ -71,7 +75,8 @@ async def report_visual(
         verified=vision_result["verified"],
         status=vision_result["status"],
         phash=vision_result["phash"],
-        image_url=f"/uploads/images/{filename}"
+        image_url=f"/uploads/images/{filename}",
+        location_unknown=is_loc_unknown
     )
 
     # Run agentic pipeline (deduplication, urgency score, nearest-unit routing)
@@ -94,13 +99,13 @@ async def report_pwa(report: PWAReportRequest):
     Handles digital incident reports submitted by citizens via web app or local hotspot mesh.
     """
     event_payload = EventPayload(
-        category=report.category.upper(),
+        category=report.category,
         coordinates=Coordinates(lat=report.lat, lng=report.lng),
         sector=report.sector or "Civilian PWA Mesh Node",
         severity=report.severity,
         casualty_count=report.casualty_count,
         summary=f"Citizen PWA Report: {report.description}",
-        confidence=0.88,
+        confidence=0.85,
         source="pwa",
         raw_transcript=report.description,
         verified=True

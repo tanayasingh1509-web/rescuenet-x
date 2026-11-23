@@ -46,6 +46,27 @@ class ConnectionManager:
         for dead in dead_connections:
             self.disconnect(dead)
 
+    async def broadcast_unit_update(self, unit_data: Dict[str, Any]):
+        """Broadcasts unit status changes (e.g. AVAILABLE, EN_ROUTE, BUSY)."""
+        if not self.active_connections:
+            return
+
+        message = {
+            "type": "UNIT_UPDATE",
+            "unit": unit_data
+        }
+
+        dead_connections = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception as e:
+                print(f"[WS] Unit update broadcast error: {e}")
+                dead_connections.append(connection)
+
+        for dead in dead_connections:
+            self.disconnect(dead)
+
     async def broadcast_dispatch_alert(self, event_id: str, unit_info: Dict[str, Any]):
         """Notifies dashboards of unit dispatch confirmation."""
         message = {

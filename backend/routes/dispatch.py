@@ -4,6 +4,7 @@ Handles:
 - FR-3.3: One-Click Dispatch triggering automated simulated SMS/Voice alert to field units
 - Unit fleet tracking and status management
 - Incident query and filter APIs
+- Incident resolution and unit release
 """
 
 from fastapi import APIRouter, HTTPException, Query
@@ -22,9 +23,9 @@ async def dispatch_incident(event_id: str, request: Optional[DispatchRequest] = 
     FR-3.3 One-Click Dispatch Action:
     1. Operator clicks 'Dispatch' in Command Dashboard
     2. Identifies or confirms assigned field unit
-    3. Simulates automated high-priority SMS/Voice dispatch notification to field unit
+    3. Sets unit status to EN_ROUTE
     4. Updates event status to 'DISPATCHED'
-    5. Broadcasts real-time update to all dashboard screens (<50ms)
+    5. Broadcasts real-time unit and event updates to all dashboards (<50ms)
     """
     event = store.get_event(event_id)
     if not event:
@@ -37,7 +38,7 @@ async def dispatch_incident(event_id: str, request: Optional[DispatchRequest] = 
         unit = store.get_unit(unit_id)
 
     if not unit:
-        # Pick nearest matching unit
+        # Pick nearest matching available unit
         unit = store.find_nearest_unit(
             category=event.category,
             lat=event.coordinates.lat,
@@ -52,15 +53,21 @@ async def dispatch_incident(event_id: str, request: Optional[DispatchRequest] = 
             "name": unit.name,
             "unit_type": unit.unit_type,
             "contact": unit.contact,
-            "eta_minutes": unit.eta_minutes
+            "eta_minutes": unit.eta_minutes,
+            "status": "EN_ROUTE"
         }
         event.assigned_unit = assigned_info
+        # Broadcast unit status change
+        await ws_manager.broadcast_unit_update(unit.model_dump())
 
     event.status = "DISPATCHED"
     event.verified = True
 
     # Broadcast updated event to WebSocket
     await ws_manager.broadcast_event(event.model_dump())
+
+    if assigned_info:
+        await ws_manager.broadcast_dispatch_alert(event.id, assigned_info)
 
     # Simulated SMS/Voice Dispatch Notification log
     simulated_sms = {
@@ -77,13 +84,45 @@ async def dispatch_incident(event_id: str, request: Optional[DispatchRequest] = 
         "notification_dispatched": simulated_sms
     }
 
+@router.post("/events/{event_id}/resolve")
+async def resolve_incident(event_id: str):
+    """
+    Frees the assigned unit (sets status back to AVAILABLE), marks the incident RESOLVED,
+    and broadcasts UNIT_UPDATE and INCIDENT_UPDATE over WebSocket.
+    """
+    event = store.get_event(event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Incident event not found")
+
+    event.status = "RESOLVED"
+
+    freed_unit = None
+    if event.assigned_unit and "id" in event.assigned_unit:
+        unit_id = event.assigned_unit["id"]
+        store.update_unit_status(unit_id, "AVAILABLE")
+        unit_obj = store.get_unit(unit_id)
+        if unit_obj:
+            freed_unit = unit_obj.model_dump()
+            await ws_manager.broadcast_unit_update(freed_unit)
+
+    await ws_manager.broadcast_event(event.model_dump())
+
+    return {
+        "status": "resolved",
+        "event_id": event.id,
+        "event": event.model_dump(),
+        "freed_unit": freed_unit
+    }
+
 @router.get("/events")
 async def list_events(
     category: Optional[str] = Query(None),
     min_severity: Optional[int] = Query(None),
-    status: Optional[str] = Query(None)
+    status: Optional[str] = Query(None),
+    limit: Optional[int] = Query(None, ge=1, le=500),
+    offset: int = Query(0, ge=0)
 ):
-    """Lists events with optional filtering."""
+    """Lists events with optional filtering and pagination."""
     events = store.list_events()
 
     if category:
@@ -93,7 +132,13 @@ async def list_events(
     if status:
         events = [e for e in events if e.status.upper() == status.upper()]
 
-    return {"events": [e.model_dump() for e in events], "total": len(events)}
+    total = len(events)
+    if limit is not None:
+        paged = events[offset:offset + limit]
+    else:
+        paged = events[offset:]
+
+    return {"events": [e.model_dump() for e in paged], "total": total}
 
 @router.get("/events/{event_id}")
 async def get_event(event_id: str):

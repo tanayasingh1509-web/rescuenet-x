@@ -4,6 +4,7 @@ Manages incident events, rescue units, deduplication clusters, and dispatch logs
 """
 
 import math
+import time
 from typing import List, Optional, Dict, Any
 from .schemas import EventPayload, RescueUnit, Coordinates
 from .config import DEFAULT_CENTER_LAT, DEFAULT_CENTER_LNG
@@ -87,6 +88,7 @@ class IncidentStore:
                 contact="+91-112"
             )
         ]
+        self._units.clear()
         for u in defaults:
             self._units[u.id] = u
 
@@ -97,16 +99,19 @@ class IncidentStore:
     def get_event(self, event_id: str) -> Optional[EventPayload]:
         return self._events.get(event_id)
 
-    def list_events(self) -> List[EventPayload]:
+    def list_events(self, limit: Optional[int] = None, offset: int = 0) -> List[EventPayload]:
         # Return sorted by timestamp descending
-        return sorted(list(self._events.values()), key=lambda e: e.timestamp, reverse=True)
+        events = sorted(list(self._events.values()), key=lambda e: e.timestamp, reverse=True)
+        if limit is not None:
+            return events[offset:offset + limit]
+        return events[offset:]
 
     def update_event_status(self, event_id: str, status: str, unit: Optional[Dict[str, Any]] = None) -> Optional[EventPayload]:
         ev = self._events.get(event_id)
         if not ev:
             return None
         ev.status = status
-        if unit:
+        if unit is not None:
             ev.assigned_unit = unit
         return ev
 
@@ -125,6 +130,7 @@ class IncidentStore:
     def find_nearest_unit(self, category: str, lat: float, lng: float) -> Optional[RescueUnit]:
         """
         Finds the nearest available rescue unit matching category, or closest available overall.
+        Only units with status == 'AVAILABLE' are eligible.
         """
         category_map = {
             "FIRE": "FIRE",
@@ -138,7 +144,7 @@ class IncidentStore:
         best_unit = None
         min_dist = float("inf")
 
-        # First try matching exact unit_type
+        # First try matching exact unit_type where status is AVAILABLE
         for unit in self._units.values():
             if unit.status == "AVAILABLE" and unit.unit_type == target_type:
                 dist = haversine_distance_meters(lat, lng, unit.lat, unit.lng)
@@ -146,7 +152,7 @@ class IncidentStore:
                     min_dist = dist
                     best_unit = unit
 
-        # If no specific type available, grab nearest available unit
+        # If no specific type available, grab nearest available unit of any type
         if not best_unit:
             for unit in self._units.values():
                 if unit.status == "AVAILABLE":
@@ -157,17 +163,38 @@ class IncidentStore:
 
         return best_unit
 
-    def find_duplicate_image(self, phash_hex: str, lat: float, lng: float, radius_meters: float = 500.0, max_hamming: int = 5) -> Optional[EventPayload]:
+    def find_duplicate_image(
+        self,
+        phash_hex: str,
+        lat: float,
+        lng: float,
+        category: str,
+        radius_meters: float = 500.0,
+        max_hamming: int = 5,
+        time_window_seconds: float = 1800.0,
+        current_time: Optional[float] = None
+    ) -> Optional[EventPayload]:
         """
         FR-2.3 & Section 4.4:
         Filter duplicate images using perceptual hashing.
-        If images submitted within 500m have Hamming distance < 5, return existing cluster event.
+        Requires:
+        1. Same incident category
+        2. Within time window (default 30 mins)
+        3. Within distance radius (500m)
+        4. Hamming distance < max_hamming (5)
         """
         if not phash_hex:
             return None
 
+        now = current_time if current_time is not None else time.time()
         for event in self._events.values():
             if event.phash and event.coordinates:
+                # Require same category
+                if category and event.category.upper() != category.upper():
+                    continue
+                # Require within time window
+                if abs(now - event.timestamp) > time_window_seconds:
+                    continue
                 dist = haversine_distance_meters(lat, lng, event.coordinates.lat, event.coordinates.lng)
                 if dist <= radius_meters:
                     h_dist = hamming_distance(phash_hex, event.phash)
@@ -175,17 +202,33 @@ class IncidentStore:
                         return event
         return None
 
-    def find_spatial_duplicate(self, lat: float, lng: float, radius_meters: float = 100.0, category: Optional[str] = None) -> Optional[EventPayload]:
+    def find_spatial_duplicate(
+        self,
+        lat: float,
+        lng: float,
+        category: Optional[str] = None,
+        radius_meters: float = 100.0,
+        time_window_seconds: float = 1800.0,
+        current_time: Optional[float] = None
+    ) -> Optional[EventPayload]:
         """
         Section 4.4:
         General spatial-merge radius of 100m for mixed-source event clustering.
+        Requires:
+        1. Same category (if specified)
+        2. Within time window (default 30 mins)
+        3. Within distance radius (100m)
         """
+        now = current_time if current_time is not None else time.time()
         for event in self._events.values():
             if event.coordinates:
+                if category is not None and event.category.upper() != category.upper():
+                    continue
+                if abs(now - event.timestamp) > time_window_seconds:
+                    continue
                 dist = haversine_distance_meters(lat, lng, event.coordinates.lat, event.coordinates.lng)
                 if dist <= radius_meters:
-                    if category is None or category.upper() == event.category.upper():
-                        return event
+                    return event
         return None
 
 # Singleton instance
