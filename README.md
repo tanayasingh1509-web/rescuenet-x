@@ -39,7 +39,7 @@ AGENTIC DISPATCHER
         │
         ▼
 REAL-TIME COMMAND CENTER (<50ms via WebSockets)
- ├── React 18 + TailwindCSS + Mapbox GL JS (with Leaflet / OpenStreetMap fallback)
+ ├── React 19 + TailwindCSS + Google Maps / Leaflet (with offline SVG fallback)
  └── 1-Click Dispatch Action with simulated automated SMS/Voice notification
 ```
 
@@ -92,11 +92,25 @@ docker compose up --build
 ```
 This builds both the frontend and backend in a multi-stage container and exposes the application on `http://localhost:8000/`.
 
-### Option 2: One-Click Launchers
+### Option 2: 1-Click Permanent Cloud Deployment (Render / Railway / Koyeb)
+
+RescueNet-X can be permanently deployed to the cloud for free with full Docker & WebSocket support:
+
+- **Deploy on Render (Recommended)**:  
+  [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/tanayasingh1509-web/rescuenet-x)  
+  *Builds the multi-stage Docker container via `render.yaml` and grants a permanent `https://<name>.onrender.com` HTTPS URL with WebSocket support.*
+
+- **Deploy on Railway**:  
+  [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template?template=https://github.com/tanayasingh1509-web/rescuenet-x)
+
+- **Deploy on Koyeb**:  
+  [![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?type=git&repository=github.com/tanayasingh1509-web/rescuenet-x&branch=main&name=rescuenet-x)
+
+### Option 3: One-Click Local Launchers
 - **Windows:** Double click `start.bat`
 - **Linux / macOS:** Run `./start.sh`
 
-### Option 3: Manual Execution
+### Option 4: Manual Execution
 ```bash
 # Backend
 pip install -r backend/requirements.txt
