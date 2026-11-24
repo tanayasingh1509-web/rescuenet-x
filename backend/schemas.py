@@ -66,7 +66,8 @@ class EventPayload(BaseModel):
             valid = {"FLOOD", "FIRE", "POLICE", "AMBULANCE", "RESCUE", "UNKNOWN"}
             if v_upper in valid:
                 return v_upper
-        return "UNKNOWN"
+            raise ValueError(f"Invalid category '{v}'. Allowed categories: {sorted(list(valid))}")
+        raise ValueError(f"Category must be a string, got {type(v).__name__}")
 
     @field_validator("source", mode="before")
     @classmethod
@@ -76,7 +77,8 @@ class EventPayload(BaseModel):
             valid = {"voice", "image", "pwa"}
             if v_lower in valid:
                 return v_lower
-        return "voice"
+            raise ValueError(f"Invalid source '{v}'. Allowed sources: {sorted(list(valid))}")
+        raise ValueError(f"Source must be a string, got {type(v).__name__}")
 
     @field_validator("status", mode="before")
     @classmethod
@@ -120,4 +122,5 @@ class PWAReportRequest(BaseModel):
             valid = {"FLOOD", "FIRE", "POLICE", "AMBULANCE", "RESCUE", "UNKNOWN"}
             if v_upper in valid:
                 return v_upper
-        return "UNKNOWN"
+            raise ValueError(f"Invalid category '{v}'. Allowed categories: {sorted(list(valid))}")
+        raise ValueError(f"Category must be a string, got {type(v).__name__}")

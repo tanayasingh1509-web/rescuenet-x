@@ -124,6 +124,18 @@ async def list_events(
     offset: int = Query(0, ge=0)
 ):
     """Lists events with optional filtering and pagination."""
+    # Handle direct function calls where defaults are Query objects
+    if not isinstance(offset, int):
+        offset = 0
+    if not isinstance(limit, int):
+        limit = None
+    if not isinstance(category, str):
+        category = None
+    if not isinstance(min_severity, int):
+        min_severity = None
+    if not isinstance(status, str):
+        status = None
+
     events = store.list_events()
 
     if category:
