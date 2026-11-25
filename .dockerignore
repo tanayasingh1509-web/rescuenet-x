@@ -1,0 +1,14 @@
+node_modules
+frontend/node_modules
+.git
+.env
+.env.*
+!.env.example
+uploads
+*.db
+__pycache__
+.venv
+tests
+tunnel_url.txt
+tunnel_daemon.py
+cloudflared.exe
