@@ -14,16 +14,21 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
-# Add project root to sys.path
+# Add project root to sys.path and set as current working directory
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+os.chdir(PROJECT_ROOT)
 
 def start_backend():
-    import uvicorn
-    # Bind to 0.0.0.0 on port 8000
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, log_level="warning")
+    try:
+        import uvicorn
+        from backend.main import app
+        # Bind to 0.0.0.0 on port 8000
+        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
+    except Exception as e:
+        print(f"❌ Backend failed to start: {e}", flush=True)
 
-def wait_for_backend(timeout=15):
+def wait_for_backend(timeout=35):
     start = time.time()
     while time.time() - start < timeout:
         try:
@@ -72,10 +77,11 @@ def try_serveo_tunnel():
     return None, None
 
 def try_pinggy_tunnel():
-    print("[TUNNEL] Attempting to create public URL via Pinggy (SSH)...", flush=True)
+    print("[TUNNEL] Establishing public HTTPS URL via Pinggy (port 443)...", flush=True)
     cmd = [
         "ssh",
         "-p", "443",
+        "-T",
         "-R0:127.0.0.1:8000",
         "-o", "StrictHostKeyChecking=no",
         "-o", "UserKnownHostsFile=NUL",
@@ -118,16 +124,22 @@ def main():
     backend_thread = threading.Thread(target=start_backend, daemon=True)
     backend_thread.start()
 
-    if not wait_for_backend(timeout=20):
+    if not wait_for_backend(timeout=35):
         print("❌ Failed to verify backend health check on port 8000.", flush=True)
         sys.exit(1)
     print("✓ Backend operational and serving frontend application.", flush=True)
 
-    # 2. Establish public tunnel (Serveo -> Pinggy)
-    print("\n[Step 2] Establishing secure public tunnel...", flush=True)
-    tunnel_proc, public_url = try_serveo_tunnel()
-    if not public_url:
+    # 2. Establish public tunnel with retry
+    public_url = None
+    tunnel_proc = None
+    for attempt in range(1, 4):
+        print(f"\n[Step 2] Establishing secure public tunnel (attempt {attempt}/3)...", flush=True)
         tunnel_proc, public_url = try_pinggy_tunnel()
+        if not public_url:
+            tunnel_proc, public_url = try_serveo_tunnel()
+        if public_url:
+            break
+        time.sleep(3)
 
     if not public_url:
         print("❌ Could not obtain public tunnel URL.", flush=True)
