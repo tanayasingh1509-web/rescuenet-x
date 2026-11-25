@@ -11,9 +11,8 @@ import threading
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-from .config import PROJECT_ROOT, DEFAULT_CENTER_LAT, DEFAULT_CENTER_LNG
+from .config import PROJECT_ROOT, DB_PATH, DEFAULT_CENTER_LAT, DEFAULT_CENTER_LNG
 
-DB_PATH = PROJECT_ROOT / "rescuenet.db"
 _db_lock = threading.Lock()
 
 def get_db_connection() -> sqlite3.Connection:

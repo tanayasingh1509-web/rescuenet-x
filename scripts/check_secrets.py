@@ -62,8 +62,7 @@ def main():
     for path in root_dir.rglob("*"):
         if path.is_file():
             # Check exclusions
-            parts = set(path.parts)
-            if parts.intersection(EXCLUDE_DIRS):
+            if any(p in EXCLUDE_DIRS or p.startswith(".venv") or p.startswith("venv") for p in path.parts):
                 continue
             # Skip check_secrets.py itself and documentation of patterns
             if path.name in ("check_secrets.py", "SECURITY_TODO.md"):

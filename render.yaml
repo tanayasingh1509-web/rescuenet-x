@@ -5,10 +5,13 @@ services:
     plan: free
     region: oregon
     dockerfilePath: Dockerfile
+    healthCheckPath: /health
     envVars:
       - key: PORT
         value: 8000
       - key: ADMIN_TOKEN
         generateValue: true
       - key: ALLOWED_ORIGINS
-        value: "*"
+        sync: false
+      - key: DATABASE_PATH
+        value: /tmp/rescuenet.db

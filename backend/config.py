@@ -40,12 +40,36 @@ if not ADMIN_TOKEN:
     os.environ["ADMIN_TOKEN"] = ADMIN_TOKEN
     print(f"[SECURITY] Generated initial ADMIN_TOKEN: {ADMIN_TOKEN}")
 
-# Allowed CORS Origins (no wildcard with credentials)
-ALLOWED_ORIGINS = os.getenv(
-    "ALLOWED_ORIGINS",
-    "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000"
-)
-ALLOWED_ORIGINS_LIST = [orig.strip() for orig in ALLOWED_ORIGINS.split(",") if orig.strip()]
+# Database path configuration (default ./data/rescuenet.db, configurable via DATABASE_PATH)
+DATABASE_PATH_ENV = os.getenv("DATABASE_PATH")
+if DATABASE_PATH_ENV:
+    DB_PATH = Path(DATABASE_PATH_ENV)
+else:
+    DB_PATH = PROJECT_ROOT / "data" / "rescuenet.db"
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+# Allowed CORS Origins (parsed comma-separated; never "*" with credentials)
+DEFAULT_DEV_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+env_origins = os.getenv("ALLOWED_ORIGINS", "").strip()
+if env_origins:
+    raw_list = [orig.strip() for orig in env_origins.split(",") if orig.strip()]
+    # Remove "*" to prevent invalid wildcard + credentials combination
+    ALLOWED_ORIGINS_LIST = [orig for orig in raw_list if orig != "*"]
+    if not ALLOWED_ORIGINS_LIST:
+        ALLOWED_ORIGINS_LIST = list(DEFAULT_DEV_ORIGINS)
+    else:
+        for dev_orig in DEFAULT_DEV_ORIGINS:
+            if dev_orig not in ALLOWED_ORIGINS_LIST:
+                ALLOWED_ORIGINS_LIST.append(dev_orig)
+else:
+    ALLOWED_ORIGINS_LIST = list(DEFAULT_DEV_ORIGINS)
 
 def save_env_keys(key_dict: dict):
     """Delegates to hardened atomic security writer."""

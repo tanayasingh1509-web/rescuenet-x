@@ -17,7 +17,7 @@ import uuid
 import logging
 import traceback
 
-from .config import HOST, PORT, DEBUG, AUDIO_UPLOAD_DIR, IMAGE_UPLOAD_DIR, ALLOWED_ORIGINS_LIST
+from .config import HOST, PORT, DEBUG, AUDIO_UPLOAD_DIR, IMAGE_UPLOAD_DIR, AUDIO_SAMPLES_DIR, DB_PATH, ALLOWED_ORIGINS_LIST
 from .websocket_manager import ws_manager
 from .routes import voice, report, simulate, dispatch, config
 from .store import store
@@ -35,6 +35,12 @@ logger = logging.getLogger("rescuenet.app")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Modern FastAPI lifespan context manager."""
+    # Ensure upload & DB directories exist on startup
+    AUDIO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    IMAGE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    AUDIO_SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
     logger.info("=" * 60)
     logger.info("🚀 RESCUENET-X DISASTER INTELLIGENCE PLATFORM STARTED")
     logger.info(f"📡 Backend running on http://{HOST}:{PORT}")
