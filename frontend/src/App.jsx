@@ -12,10 +12,12 @@ import ApiKeyModal from './components/ApiKeyModal';
 import { authFetch } from './utils/auth';
 import { WifiOff } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+const API_BASE = import.meta.env.VITE_API_BASE || (typeof window !== 'undefined'
+  ? `${window.location.protocol}//${window.location.host}`
+  : '');
 const WS_URL = import.meta.env.VITE_WS_URL || (typeof window !== 'undefined'
   ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
-  : 'ws://localhost:8000/ws');
+  : '');
 
 // Single shared AudioContext singleton to prevent "more than 6 AudioContexts" browser warnings
 let sharedAudioContext = null;

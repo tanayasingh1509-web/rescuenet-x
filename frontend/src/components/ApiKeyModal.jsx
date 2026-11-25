@@ -5,7 +5,9 @@ import {
 } from 'lucide-react';
 import { authFetch } from '../utils/auth';
 
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+const API_BASE = import.meta.env.VITE_API_BASE || (typeof window !== 'undefined'
+  ? `${window.location.protocol}//${window.location.host}`
+  : '');
 
 export default function ApiKeyModal({ isOpen, onClose }) {
   const [geminiKey, setGeminiKey] = useState('');

@@ -4,7 +4,9 @@ import {
   Volume2, X, Radio
 } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+const API_BASE = import.meta.env.VITE_API_BASE || (typeof window !== 'undefined'
+  ? `${window.location.protocol}//${window.location.host}`
+  : '');
 
 export default function PhoneSimulatorModal({ isOpen, onClose }) {
   const [callState, setCallState] = useState('IDLE'); // 'IDLE' | 'CALLING' | 'CONNECTED' | 'RECORDING' | 'ENDED'

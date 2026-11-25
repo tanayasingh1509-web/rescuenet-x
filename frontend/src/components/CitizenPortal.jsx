@@ -5,7 +5,9 @@ import {
   ArrowLeft, Loader2, Radio, WifiOff, RefreshCw
 } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+const API_BASE = import.meta.env.VITE_API_BASE || (typeof window !== 'undefined'
+  ? `${window.location.protocol}//${window.location.host}`
+  : '');
 const OUTBOX_STORAGE_KEY = 'rescuenet_offline_outbox';
 
 export default function CitizenPortal({ onBackToCommand }) {
