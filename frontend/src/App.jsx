@@ -267,6 +267,17 @@ export default function App() {
     };
   }, [connectWebSocket]);
 
+  // Surface failed operator actions instead of failing silently
+  const reportActionError = (label, response) => {
+    const msg =
+      response.status === 401
+        ? `${label}: operator token missing or invalid`
+        : `${label} failed (HTTP ${response.status})`;
+    console.error(msg);
+    setActionError(msg);
+    if (typeof window !== 'undefined') window.alert(msg);
+  };
+
   // 1-Click Dispatch Action
   const handleDispatch = async (eventId) => {
     playTacticalBeep(1100, 0.2);
@@ -277,10 +288,7 @@ export default function App() {
         body: JSON.stringify({ event_id: eventId })
       });
       if (!response.ok) {
-        const errorMsg = response.status === 401
-          ? 'operator token missing or invalid'
-          : `failed (HTTP ${response.status})`;
-        showActionError(errorMsg);
+        reportActionError('Dispatch', response);
         return;
       }
       const data = await response.json();
@@ -302,7 +310,6 @@ export default function App() {
       }
     } catch (e) {
       console.error('Dispatch failed:', e);
-      showActionError(`failed (${e.message || e})`);
     }
   };
 
@@ -313,10 +320,7 @@ export default function App() {
         method: 'POST'
       });
       if (!response.ok) {
-        const errorMsg = response.status === 401
-          ? 'operator token missing or invalid'
-          : `failed (HTTP ${response.status})`;
-        showActionError(errorMsg);
+        reportActionError('Resolve incident', response);
         return;
       }
       const data = await response.json();
@@ -330,7 +334,6 @@ export default function App() {
       }
     } catch (e) {
       console.error('Resolve incident failed:', e);
-      showActionError(`failed (${e.message || e})`);
     }
   };
 
@@ -391,10 +394,7 @@ export default function App() {
     try {
       const response = await authFetch(`${API_BASE}/api/simulate/reset`, { method: 'POST' });
       if (!response.ok) {
-        const errorMsg = response.status === 401
-          ? 'operator token missing or invalid'
-          : `failed (HTTP ${response.status})`;
-        showActionError(errorMsg);
+        reportActionError('Reset', response);
         return;
       }
       setEvents([]);
@@ -403,7 +403,6 @@ export default function App() {
       if (resUn.units) setUnits(resUn.units);
     } catch (e) {
       console.error('Reset failed:', e);
-      showActionError(`failed (${e.message || e})`);
     }
   };
 
