@@ -15,3 +15,7 @@ services:
         sync: false
       - key: DATABASE_PATH
         value: /tmp/rescuenet.db
+      - key: DEMO_MODE
+        value: "true"
+      - key: VITE_GOOGLE_MAPS_API_KEY
+        sync: false

@@ -74,6 +74,17 @@ export default function App() {
   const [isPitchDeckOpen, setIsPitchDeckOpen] = useState(false);
   const [isResponderModalOpen, setIsResponderModalOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [actionError, setActionError] = useState(null);
+
+  const showActionError = (msg) => {
+    console.error('[Action Error]:', msg);
+    setActionError(msg);
+    if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+      try {
+        window.alert(msg);
+      } catch (_) {}
+    }
+  };
 
   const wsRef = useRef(null);
   const pingIntervalRef = useRef(null);
@@ -265,6 +276,13 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event_id: eventId })
       });
+      if (!response.ok) {
+        const errorMsg = response.status === 401
+          ? 'operator token missing or invalid'
+          : `failed (HTTP ${response.status})`;
+        showActionError(errorMsg);
+        return;
+      }
       const data = await response.json();
       if (data.status === 'dispatched') {
         setEvents((prev) =>
@@ -284,6 +302,7 @@ export default function App() {
       }
     } catch (e) {
       console.error('Dispatch failed:', e);
+      showActionError(`failed (${e.message || e})`);
     }
   };
 
@@ -293,6 +312,13 @@ export default function App() {
       const response = await authFetch(`${API_BASE}/api/events/${eventId}/resolve`, {
         method: 'POST'
       });
+      if (!response.ok) {
+        const errorMsg = response.status === 401
+          ? 'operator token missing or invalid'
+          : `failed (HTTP ${response.status})`;
+        showActionError(errorMsg);
+        return;
+      }
       const data = await response.json();
       if (data.status === 'resolved') {
         setEvents((prev) =>
@@ -304,6 +330,7 @@ export default function App() {
       }
     } catch (e) {
       console.error('Resolve incident failed:', e);
+      showActionError(`failed (${e.message || e})`);
     }
   };
 
@@ -362,13 +389,21 @@ export default function App() {
   // Reset demo store
   const handleReset = async () => {
     try {
-      await authFetch(`${API_BASE}/api/simulate/reset`, { method: 'POST' });
+      const response = await authFetch(`${API_BASE}/api/simulate/reset`, { method: 'POST' });
+      if (!response.ok) {
+        const errorMsg = response.status === 401
+          ? 'operator token missing or invalid'
+          : `failed (HTTP ${response.status})`;
+        showActionError(errorMsg);
+        return;
+      }
       setEvents([]);
       setSelectedEvent(null);
       const resUn = await fetch(`${API_BASE}/api/units`).then((r) => r.json());
       if (resUn.units) setUnits(resUn.units);
     } catch (e) {
       console.error('Reset failed:', e);
+      showActionError(`failed (${e.message || e})`);
     }
   };
 
@@ -395,6 +430,25 @@ export default function App() {
             className="text-[10px] bg-amber-900 hover:bg-amber-800 text-amber-100 px-2 py-0.5 rounded border border-amber-600 transition"
           >
             Retry Now
+          </button>
+        </div>
+      )}
+
+      {/* Action Error Alert Banner */}
+      {actionError && (
+        <div
+          role="alert"
+          className="bg-rose-950/90 border-b border-rose-700/80 px-4 py-1.5 text-xs text-rose-200 flex items-center justify-between font-mono z-[6000]"
+        >
+          <div className="flex items-center space-x-2">
+            <span className="font-bold text-rose-400">[OPERATOR ERROR]:</span>
+            <span>{actionError}</span>
+          </div>
+          <button
+            onClick={() => setActionError(null)}
+            className="text-[10px] bg-rose-900 hover:bg-rose-800 text-rose-100 px-2 py-0.5 rounded border border-rose-600 transition"
+          >
+            Dismiss
           </button>
         </div>
       )}

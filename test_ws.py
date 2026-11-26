@@ -4,7 +4,7 @@ import json
 import requests
 import time
 
-async def test_ws():
+async def run_ws_test():
     uri = 'ws://127.0.0.1:8000/ws'
     async with websockets.connect(uri) as ws:
         init_raw = await ws.recv()
@@ -24,4 +24,4 @@ async def test_ws():
         print('[WS TEST] WebSocket test passed successfully!')
 
 if __name__ == '__main__':
-    asyncio.run(test_ws())
+    asyncio.run(run_ws_test())

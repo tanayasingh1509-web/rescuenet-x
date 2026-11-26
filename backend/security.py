@@ -67,6 +67,25 @@ async def verify_admin_token(
         )
     return True
 
+def is_demo_mode() -> bool:
+    """Check if DEMO_MODE is active at call time (1/true/yes/on)."""
+    val = os.getenv("DEMO_MODE", "").strip().lower()
+    return val in ("1", "true", "yes", "on")
+
+async def verify_operator(
+    request: Request,
+    header_token: Optional[str] = Security(api_key_header),
+    bearer_creds: Optional[HTTPAuthorizationCredentials] = Security(bearer_auth)
+) -> bool:
+    """
+    Operator authorization dependency.
+    In DEMO_MODE (1/true/yes/on), allows operator actions without token.
+    Otherwise, delegates to verify_admin_token.
+    """
+    if is_demo_mode():
+        return True
+    return await verify_admin_token(request, header_token, bearer_creds)
+
 # 2. Whitelisted Environment Key Writing
 ALLOWED_ENV_KEYS = {
     "GEMINI_API_KEY",
