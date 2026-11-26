@@ -1,56 +1,75 @@
 /**
  * Operator Authentication Utility
- * Manages admin token stored exclusively in sessionStorage (never hardcoded in repo).
+ * Admin token lives only in sessionStorage (never hardcoded in the repo).
+ *
+ * Behaviour:
+ *  - Requests are sent WITHOUT prompting first. In DEMO_MODE the backend lets
+ *    dispatch / resolve / reset through, so visitors never see a token prompt.
+ *  - Only when the server answers 401 do we ask the operator for the token,
+ *    once, then retry. Cancelling returns the 401 so callers can show a message.
  */
 
-export const getAdminToken = () => {
+const TOKEN_KEY = 'admin_token';
+
+export const getStoredAdminToken = () => {
   if (typeof window === 'undefined') return '';
-  let token = sessionStorage.getItem('admin_token');
-  if (!token) {
-    const entered = window.prompt(
-      'Operator Authentication Required:\nEnter ADMIN_TOKEN (printed in backend startup console):'
-    );
-    if (entered) {
-      token = entered.trim();
-      sessionStorage.setItem('admin_token', token);
-    }
+  try {
+    return sessionStorage.getItem(TOKEN_KEY) || '';
+  } catch {
+    return '';
   }
-  return token || '';
 };
 
 export const setAdminToken = (token) => {
-  if (typeof window !== 'undefined') {
+  if (typeof window === 'undefined') return;
+  try {
     if (token) {
-      sessionStorage.setItem('admin_token', token.trim());
+      sessionStorage.setItem(TOKEN_KEY, token.trim());
     } else {
-      sessionStorage.removeItem('admin_token');
+      sessionStorage.removeItem(TOKEN_KEY);
     }
+  } catch {
+    // sessionStorage can be unavailable (private mode / blocked storage)
   }
 };
 
 export const getAuthHeaders = () => {
-  const token = getAdminToken();
+  const token = getStoredAdminToken();
   return token ? { 'X-Admin-Token': token } : {};
 };
 
-export const authFetch = async (url, options = {}) => {
-  const headers = {
-    ...getAuthHeaders(),
-    ...(options.headers || {})
-  };
+const promptForToken = (message) => {
+  if (typeof window === 'undefined') return '';
+  const entered = window.prompt(message);
+  return entered ? entered.trim() : '';
+};
 
-  const response = await fetch(url, { ...options, headers });
-  if (response.status === 401) {
-    // Clear invalid token from sessionStorage so operator can enter new one
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem('admin_token');
-    }
-    const retry = window.prompt('Invalid ADMIN_TOKEN. Please re-enter operator ADMIN_TOKEN:');
-    if (retry) {
-      sessionStorage.setItem('admin_token', retry.trim());
-      headers['X-Admin-Token'] = retry.trim();
-      return fetch(url, { ...options, headers });
-    }
-  }
+export const authFetch = async (url, options = {}) => {
+  const baseHeaders = options.headers || {};
+
+  // 1st attempt: silently use a stored token if we have one, otherwise none.
+  let response = await fetch(url, {
+    ...options,
+    headers: { ...getAuthHeaders(), ...baseHeaders }
+  });
+
+  if (response.status !== 401) return response;
+
+  // Server wants a token. Drop any stale one and ask exactly once.
+  const hadToken = Boolean(getStoredAdminToken());
+  setAdminToken('');
+  const token = promptForToken(
+    hadToken
+      ? 'Saved operator token was rejected.\nEnter a valid ADMIN_TOKEN (Render dashboard > Environment):'
+      : 'Operator token required for this action.\nEnter ADMIN_TOKEN (Render dashboard > Environment):'
+  );
+  if (!token) return response; // cancelled: caller sees the 401
+
+  setAdminToken(token);
+  response = await fetch(url, {
+    ...options,
+    headers: { 'X-Admin-Token': token, ...baseHeaders }
+  });
+  if (response.status === 401) setAdminToken('');
   return response;
 };

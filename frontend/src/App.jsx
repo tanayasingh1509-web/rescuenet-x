@@ -256,6 +256,16 @@ export default function App() {
     };
   }, [connectWebSocket]);
 
+  // Surface failed operator actions instead of failing silently
+  const reportActionError = (label, response) => {
+    const msg =
+      response.status === 401
+        ? `${label} blocked: operator token missing or invalid.`
+        : `${label} failed (HTTP ${response.status}). Please try again.`;
+    console.error(msg);
+    if (typeof window !== 'undefined') window.alert(msg);
+  };
+
   // 1-Click Dispatch Action
   const handleDispatch = async (eventId) => {
     playTacticalBeep(1100, 0.2);
@@ -265,6 +275,10 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event_id: eventId })
       });
+      if (!response.ok) {
+        reportActionError('Dispatch', response);
+        return;
+      }
       const data = await response.json();
       if (data.status === 'dispatched') {
         setEvents((prev) =>
@@ -293,6 +307,10 @@ export default function App() {
       const response = await authFetch(`${API_BASE}/api/events/${eventId}/resolve`, {
         method: 'POST'
       });
+      if (!response.ok) {
+        reportActionError('Resolve', response);
+        return;
+      }
       const data = await response.json();
       if (data.status === 'resolved') {
         setEvents((prev) =>
@@ -362,7 +380,11 @@ export default function App() {
   // Reset demo store
   const handleReset = async () => {
     try {
-      await authFetch(`${API_BASE}/api/simulate/reset`, { method: 'POST' });
+      const resetRes = await authFetch(`${API_BASE}/api/simulate/reset`, { method: 'POST' });
+      if (!resetRes.ok) {
+        reportActionError('Reset', resetRes);
+        return;
+      }
       setEvents([]);
       setSelectedEvent(null);
       const resUn = await fetch(`${API_BASE}/api/units`).then((r) => r.json());

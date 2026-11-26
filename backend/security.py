@@ -67,6 +67,30 @@ async def verify_admin_token(
         )
     return True
 
+def is_demo_mode() -> bool:
+    """
+    DEMO_MODE=true lets public demo visitors (judges, reviewers) use the
+    operational controls (dispatch / resolve / reset) WITHOUT an operator token.
+    Read at call time so it can be flipped via env without code changes.
+    Sensitive routes (API-key config / .env writes) NEVER honour this flag.
+    """
+    return os.getenv("DEMO_MODE", "").strip().lower() in ("1", "true", "yes", "on")
+
+async def verify_operator(
+    request: Request,
+    header_token: Optional[str] = Security(api_key_header),
+    bearer_creds: Optional[HTTPAuthorizationCredentials] = Security(bearer_auth)
+) -> bool:
+    """
+    Guard for operational actions (dispatch, resolve, reset).
+    - DEMO_MODE on  -> open, so the live demo works without a secret token.
+    - DEMO_MODE off -> identical to verify_admin_token (strict).
+    Config / secret-writing routes must keep using verify_admin_token.
+    """
+    if is_demo_mode():
+        return True
+    return await verify_admin_token(request, header_token, bearer_creds)
+
 # 2. Whitelisted Environment Key Writing
 ALLOWED_ENV_KEYS = {
     "GEMINI_API_KEY",

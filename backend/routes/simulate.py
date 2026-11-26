@@ -21,7 +21,7 @@ from ..ai_engine import process_audio_transcript, offline_heuristic_nlp_extracto
 from ..agentic_dispatcher import run_agentic_pipeline
 from ..websocket_manager import ws_manager
 from ..store import store
-from ..security import verify_admin_token
+from ..security import verify_operator
 
 router = APIRouter(prefix="/api/simulate", tags=["Offline Simulation & Scenarios"])
 
@@ -193,7 +193,7 @@ async def trigger_scenario(scenario_name: str):
         "agent_logs": state.action_log
     }
 
-@router.post("/reset", dependencies=[Depends(verify_admin_token)])
+@router.post("/reset", dependencies=[Depends(verify_operator)])
 async def reset_store():
     """Resets event store and SQLite database to baseline state for fresh demo runs."""
     store.reset()

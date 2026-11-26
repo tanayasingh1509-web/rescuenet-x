@@ -53,7 +53,7 @@ Because the key exists in previous git commits, you should purge it from history
 pip install git-filter-repo
 
 # 2. Create a replacement file
-echo "AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao==>REMOVED_LEAKED_KEY" > replace.txt
+echo "<LEAKED_KEY_REDACTED>==>REMOVED_LEAKED_KEY" > replace.txt
 
 # 3. Purge the secret from all commits and branches
 git filter-repo --replace-text replace.txt --force
@@ -67,7 +67,7 @@ git push origin --force --all
 ```bash
 # 1. Download BFG jar
 # 2. Create text file with the leaked key
-echo "AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao" > passwords.txt
+echo "<LEAKED_KEY_REDACTED>" > passwords.txt
 
 # 3. Clean repository
 java -jar bfg.jar --replace-text passwords.txt .git
