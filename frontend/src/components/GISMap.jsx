@@ -316,11 +316,11 @@ export default function GISMap({
           }
         })
         .catch((err) => {
-          console.warn('Google Maps load failed, falling back to Leaflet:', err);
+          console.warn('Google Maps load failed, silently falling back to Leaflet Carto Dark:', err);
           teardownGoogleMap();
           setMapEngine('leaflet');
         });
-    } else if (mapEngine === 'leaflet') {
+    } else if (mapEngine === 'leaflet' || mapEngine === 'leaflet-satellite') {
       teardownGoogleMap();
     }
   }, [mapEngine, googleMapsApiKey, defaultCenter, teardownGoogleMap]);
@@ -542,49 +542,7 @@ export default function GISMap({
           <span>GIS ENGINE</span>
         </span>
 
-        {/* Google Maps (Dark Tactical) */}
-        <button
-          onClick={() => {
-            if (!googleMapsApiKey) {
-              alert('Notice: Google Maps API key not configured. Operating on Carto Dark / OpenStreetMap engine.');
-            } else {
-              setMapEngine('google');
-            }
-          }}
-          className={`px-2 py-0.5 rounded text-[11px] font-medium transition flex items-center space-x-1 ${
-            mapEngine === 'google'
-              ? 'bg-[#1b2638] text-white font-bold border border-emerald-500/60 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-          title="Google Maps Tactical Dark (Active Projection)"
-          aria-label="Switch to Google Maps Dark engine"
-        >
-          <span className={`w-1.5 h-1.5 rounded-full ${googleMapsApiKey ? 'bg-emerald-400' : 'bg-slate-500'}`} />
-          <span>Google Dark</span>
-        </button>
-
-        {/* Google Maps Satellite */}
-        <button
-          onClick={() => {
-            if (!googleMapsApiKey) {
-              alert('Notice: Google Maps API key not configured. Operating on Carto Dark / OpenStreetMap engine.');
-            } else {
-              setMapEngine('google-satellite');
-            }
-          }}
-          className={`px-2 py-0.5 rounded text-[11px] font-medium transition flex items-center space-x-1 ${
-            mapEngine === 'google-satellite'
-              ? 'bg-[#1b2638] text-white font-bold border border-sky-500/60 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-          title="Google Maps Aerial Satellite Imagery"
-          aria-label="Switch to Google Maps Satellite engine"
-        >
-          <Satellite className="w-3 h-3 text-sky-400" />
-          <span>Satellite</span>
-        </button>
-
-        {/* Leaflet Carto Dark (Offline) */}
+        {/* Leaflet Carto Dark (Keyless default) */}
         <button
           onClick={() => setMapEngine('leaflet')}
           className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
@@ -592,11 +550,60 @@ export default function GISMap({
               ? 'bg-[#1b2638] text-white font-bold border border-[#2d3e5a]'
               : 'text-slate-400 hover:text-slate-200'
           }`}
-          title="OpenStreetMap / CARTO Offline Fallback"
+          title="OpenStreetMap / CARTO Dark Tactical (Keyless)"
           aria-label="Switch to Carto Dark Leaflet engine"
         >
           Carto Dark
         </button>
+
+        {/* Leaflet Satellite (Esri World Imagery, Keyless) */}
+        <button
+          onClick={() => setMapEngine('leaflet-satellite')}
+          className={`px-2 py-0.5 rounded text-[11px] font-medium transition flex items-center space-x-1 ${
+            mapEngine === 'leaflet-satellite'
+              ? 'bg-[#1b2638] text-white font-bold border border-sky-500/60 shadow-sm'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+          title="Esri World Imagery Satellite (Keyless)"
+          aria-label="Switch to Esri Satellite engine"
+        >
+          <Satellite className="w-3 h-3 text-sky-400" />
+          <span>Satellite</span>
+        </button>
+
+        {/* Google Maps (Dark Tactical - only shown when key is configured) */}
+        {googleMapsApiKey && (
+          <button
+            onClick={() => setMapEngine('google')}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium transition flex items-center space-x-1 ${
+              mapEngine === 'google'
+                ? 'bg-[#1b2638] text-white font-bold border border-emerald-500/60 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+            title="Google Maps Tactical Dark (Active Projection)"
+            aria-label="Switch to Google Maps Dark engine"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span>Google Dark</span>
+          </button>
+        )}
+
+        {/* Google Maps Satellite (only shown when key is configured) */}
+        {googleMapsApiKey && (
+          <button
+            onClick={() => setMapEngine('google-satellite')}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium transition flex items-center space-x-1 ${
+              mapEngine === 'google-satellite'
+                ? 'bg-[#1b2638] text-white font-bold border border-sky-500/60 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+            title="Google Maps Aerial Satellite Imagery"
+            aria-label="Switch to Google Maps Satellite engine"
+          >
+            <Satellite className="w-3 h-3 text-emerald-400" />
+            <span>Google Sat</span>
+          </button>
+        )}
 
         <span className="w-px h-3 bg-[#1f2b3e]" />
 
@@ -628,11 +635,19 @@ export default function GISMap({
         >
           <ChangeView center={center} zoom={selectedEvent ? 14 : 13} />
 
-          {/* CartoDB Dark Tactical Tiles */}
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>'
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          />
+          {/* Dynamic Keyless Tile Layer */}
+          {mapEngine === 'leaflet-satellite' ? (
+            <TileLayer
+              attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              maxZoom={19}
+            />
+          ) : (
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>'
+              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+            />
+          )}
 
           {/* Crisis Hazard Heatmap Zones */}
           {showHeatmap &&
