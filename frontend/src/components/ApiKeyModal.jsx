@@ -134,7 +134,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
                 </span>
               </h2>
               <p className="text-[11px] text-slate-400">
-                Configure live API keys for Google Gemini, Mapbox GL JS, and Twilio Telephony
+                Configure live API keys for Google Gemini, Twilio Telephony, and optional Google Maps
               </p>
             </div>
           </div>
@@ -229,9 +229,9 @@ export default function ApiKeyModal({ isOpen, onClose }) {
           <div className="bg-[#101726] border border-[#1e2a3c] rounded p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-1.5">
-                <span className="font-bold text-xs text-slate-100 font-mono">2. Google Maps API Key</span>
-                <span className="text-[9px] font-mono bg-emerald-950 text-emerald-300 border border-emerald-800 px-1 rounded">
-                  ACTIVE GIS
+                <span className="font-bold text-xs text-slate-100 font-mono">2. Google Maps API Key (Optional)</span>
+                <span className="text-[9px] font-mono bg-slate-800 text-slate-300 border border-slate-700 px-1 rounded">
+                  OPTIONAL
                 </span>
               </div>
               <a
@@ -246,7 +246,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
             </div>
 
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              Powers Google Maps Tactical Dark vector and Satellite projections for CAD emergency dispatch.
+              Optional - map works without it using keyless Carto Dark and Esri Satellite. Provides Google Maps Tactical Dark vector and Satellite projections if set.
             </p>
 
             <div className="relative">
@@ -254,7 +254,7 @@ export default function ApiKeyModal({ isOpen, onClose }) {
                 type={showGoogleMapsKey ? 'text' : 'password'}
                 value={googleMapsKey}
                 onChange={(e) => setGoogleMapsKey(e.target.value)}
-                placeholder="Enter Google Maps API key..."
+                placeholder="Optional: Enter Google Maps API key (map works without it)..."
                 className="w-full pl-2.5 pr-8 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-mono"
                 aria-label="Google Maps API Key"
               />
@@ -269,55 +269,11 @@ export default function ApiKeyModal({ isOpen, onClose }) {
             </div>
           </div>
 
-          {/* 3. Mapbox Public Access Token */}
+          {/* 3. Twilio Telephony Credentials */}
           <div className="bg-[#101726] border border-[#1e2a3c] rounded p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-1.5">
-                <span className="font-bold text-xs text-slate-100 font-mono">3. Mapbox Public Token</span>
-                <span className="text-[9px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800 px-1 rounded">
-                  GIS VECTOR
-                </span>
-              </div>
-              <a
-                href="https://account.mapbox.com/access-tokens/"
-                target="_blank"
-                rel="noreferrer"
-                className="text-[10px] text-sky-400 hover:text-sky-300 flex items-center space-x-1 font-mono"
-              >
-                <span>Get Token</span>
-                <ExternalLink className="w-2.5 h-2.5" />
-              </a>
-            </div>
-
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Enables Mapbox dark vector mapping. If left empty, the platform automatically runs on local Carto Dark / OpenStreetMap tiles.
-            </p>
-
-            <div className="relative">
-              <input
-                type={showMapboxToken ? 'text' : 'password'}
-                value={mapboxToken}
-                onChange={(e) => setMapboxToken(e.target.value)}
-                placeholder="Enter Mapbox public token..."
-                className="w-full pl-2.5 pr-8 py-1.5 bg-[#090d16] border border-[#233148] rounded text-xs text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-mono"
-                aria-label="Mapbox Public Token"
-              />
-              <button
-                type="button"
-                onClick={() => setShowMapboxToken(!showMapboxToken)}
-                className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-300"
-                aria-label="Toggle Mapbox Token Visibility"
-              >
-                {showMapboxToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-          </div>
-
-          {/* 4. Twilio Telephony Credentials */}
-          <div className="bg-[#101726] border border-[#1e2a3c] rounded p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-1.5">
-                <span className="font-bold text-xs text-slate-100 font-mono">4. Twilio Telephony</span>
+                <span className="font-bold text-xs text-slate-100 font-mono">3. Twilio Telephony</span>
                 <span className="text-[9px] font-mono bg-purple-950 text-purple-300 border border-purple-800 px-1 rounded">
                   2G VOICE / SMS
                 </span>

@@ -78,9 +78,9 @@ def save_env_keys(key_dict: dict):
 
 # Google Gemini API Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
-# Ollama & Whisper configuration
+# Ollama & Whisper configuration (Local Development / Offline Fallback Only - not used on Render)
 OLLAMA_ENDPOINT = os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434/api/generate")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
 DEFAULT_WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")

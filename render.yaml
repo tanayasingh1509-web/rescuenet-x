@@ -15,11 +15,13 @@ services:
       # /api/config/* (API keys, .env writes) STILL requires ADMIN_TOKEN.
       - key: DEMO_MODE
         value: "true"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
       - key: ALLOWED_ORIGINS
         sync: false
       - key: DATABASE_PATH
         value: /tmp/rescuenet.db
-      - key: DEMO_MODE
-        value: "true"
       - key: VITE_GOOGLE_MAPS_API_KEY
         sync: false

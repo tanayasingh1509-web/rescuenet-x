@@ -99,11 +99,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # Global catch-all exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    req_id = getattr(request.state, "request_id", "unknown")
+    req_id = getattr(request.state, "request_id", None) or str(uuid.uuid4())[:8]
     logger.error(f"[REQ {req_id}] {request.method} {request.url.path}: {exc}\n{traceback.format_exc()}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": "An internal server error occurred", "message": str(exc), "request_id": req_id}
+        content={"detail": "Internal server error", "request_id": req_id}
     )
 
 # Phase 3.4: Request ID middleware
@@ -239,13 +239,14 @@ async def health_check():
     except Exception as e:
         db_status = f"error: {e}"
 
-    from .ai_engine import whisper
+    from .ai_engine import whisper, get_active_ai_tier
     from .vision_engine import yolo_model
 
     return {
         "status": "healthy" if db_status == "connected" else "degraded",
         "service": "RESCUENET-X",
         "version": "1.0.0",
+        "ai_tier": get_active_ai_tier(),
         "database": db_status,
         "whisper_available": bool(whisper is not None),
         "yolo_available": bool(yolo_model is not None),

@@ -186,9 +186,9 @@ export default function PitchDeckModal({ isOpen, onClose }) {
 
           <div className="bg-[#101726] p-3 rounded border border-[#1e2a3c] space-y-1">
             <span className="font-bold text-rose-400 block text-[11px] font-mono">GIS Mapping Layer</span>
-            <span className="text-slate-200 font-semibold block text-xs">Google Maps + Leaflet Fallback</span>
+            <span className="text-slate-200 font-semibold block text-xs">Leaflet (Keyless) + Optional Google Maps</span>
             <p className="text-slate-400 text-[11px] leading-relaxed">
-              Full Google Maps SDK with tactical dark styling. Automatic failover to Carto Dark Leaflet on auth failure or offline mode.
+              Default high-performance keyless tiles (Carto Dark + Esri World Imagery Satellite). Optional Google Maps tactical dark and satellite vector if key configured.
             </p>
           </div>
         </div>

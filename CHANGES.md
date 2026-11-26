@@ -173,6 +173,45 @@ This document records the complete, phased architectural audit and remediation o
 * **Automated Frontend Test Suite (`frontend/src/__tests__/`)**:
   * Verifies GPS gating on SOS submit, offline outbox queuing and storage, automatic failover from Google Maps to Leaflet on auth failure, exponential backoff reconnection progression, and true ping/pong latency measurement.
 
+### Phase 6 — Cloud Deployment & Render Optimization
+* **Deployment Requirements**:
+  * Created `backend/requirements-deploy.txt` excluding heavy ML packages (`torch`, `ultralytics`, `openai-whisper`, `pytest`, `httpx`), allowing seamless builds on Render free tier (512 MB RAM).
+  * Maintained `backend/requirements.txt` for full local development.
+* **Hardened Dockerfile**:
+  * Multi-stage build running as non-root user `rescuenet`.
+  * Dynamic port binding `${PORT:-8000}` with `--proxy-headers` and `--forwarded-allow-ips="*"`.
+  * Dynamic healthcheck matching port `${PORT:-8000}`.
+  * Measured runtime memory usage: 4.03 MB / 512 MB (0.8% utilization).
+
+### Phase 7 — Demo Mode & Operator Token Usability
+* **Operator Token Prompt Elimination**:
+  * Added `DEMO_MODE=true` in `render.yaml` and `backend/security.py` via `is_demo_mode()`.
+  * Scoped public operator actions (`POST /api/dispatch/{id}`, `POST /api/events/{id}/resolve`, `POST /api/simulate/reset`) to `verify_operator`, enabling visitors and evaluators to interact with the demo with zero prompts.
+  * Strictly preserved `verify_admin_token` on `/api/config/*` so API keys and environment files remain protected even in demo mode.
+  * Rewrote `frontend/src/utils/auth.js` (`authFetch`) to never prompt proactively, prompting only once upon receiving HTTP 401 and caching in `sessionStorage`.
+
+### Phase 8 — Keyless Map & UI Honesty
+* **Esri World Imagery & Keyless GIS**:
+  * Added keyless `leaflet-satellite` engine using Esri World Imagery tiles (`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}`, maxZoom 19) with proper Esri attribution.
+  * Kept Carto Dark as default keyless vector engine. Map works 100% without any API key or billing required.
+  * Removed all intrusive `alert()` dialogs on Google Maps engine switch.
+  * Rendered Google Dark and Google Sat buttons only when `VITE_GOOGLE_MAPS_API_KEY` is present, with silent failover on `gm_authFailure`.
+  * Removed unused `mapbox-gl` dependency and CSS import, updating `ApiKeyModal.jsx`, `HeaderStats.jsx`, `PitchDeckModal.jsx`, and `README.md`.
+
+### Phase 9 — Gemini 3.8 Flash, AI Tier Telemetry & Security Hardening
+* **Gemini 3.8 Flash & Ollama Fallback**:
+  * Updated default model to `gemini-3.8-flash` in `backend/config.py`, `.env.example`, and `render.yaml`.
+  * Added `[AI TIER]` logging across extraction calls (`Gemini`, `Ollama`, or `Offline Heuristic`).
+  * Enforced short timeouts on Ollama HTTP requests (`timeout=(1.5, 2.5)`) ensuring missing Ollama instances on cloud hosts never delay requests.
+  * Documented Ollama and Whisper as local-development fallbacks only.
+* **AI Tier Telemetry in Health Check**:
+  * Enhanced `GET /health` to return `"ai_tier"` (`"gemini"`, `"ollama"`, or `"heuristic"`) dynamically without exposing any API keys.
+* **Exception Handler & Rate Limiting Hardening**:
+  * Hardened `global_exception_handler` in `backend/main.py` to return generic `{"detail": "Internal server error", "request_id": req_id}` with HTTP 500, preventing stack or DB connection leakage.
+  * Added sliding-window rate limiting (`simulation_limiter`) on `POST /api/simulate/scenario/{scenario_name}` and `POST /api/simulate/voice`.
+* **Redacted Security Documentation**:
+  * Redacted partial key prefixes in `SECURITY_TODO.md` with `<LEAKED_KEY_REDACTED>`.
+
 ---
 
 ## 3. What Could Not Be Fixed Automatically (Manual Owner Actions)

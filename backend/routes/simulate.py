@@ -6,7 +6,7 @@ Provides:
 - /api/simulate/reset: Clears events and resets demo state
 """
 
-from fastapi import APIRouter, UploadFile, File, Form, Depends
+from fastapi import APIRouter, UploadFile, File, Form, Depends, Request
 from starlette.concurrency import run_in_threadpool
 import os
 import wave
@@ -21,7 +21,7 @@ from ..ai_engine import process_audio_transcript, offline_heuristic_nlp_extracto
 from ..agentic_dispatcher import run_agentic_pipeline
 from ..websocket_manager import ws_manager
 from ..store import store
-from ..security import verify_operator
+from ..security import verify_operator, simulation_limiter
 
 router = APIRouter(prefix="/api/simulate", tags=["Offline Simulation & Scenarios"])
 
@@ -73,6 +73,7 @@ def generate_synthetic_pcm_wav(file_path: str, duration_sec: float = 2.0, freq: 
 
 @router.post("/voice")
 async def simulate_voice(
+    request: Request,
     audio: Optional[UploadFile] = File(None),
     transcript_text: Optional[str] = Form(None),
     scenario: Optional[str] = Form(None)
@@ -81,6 +82,9 @@ async def simulate_voice(
     Risk-2 Mitigation: Audio File Simulation Endpoint.
     Feeds pre-recorded voice clips or disaster transcript directly into the processing pipeline.
     """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    simulation_limiter.check(client_ip)
+
     sample_path = str(AUDIO_SAMPLES_DIR / f"sim_{uuid.uuid4().hex[:6]}.wav")
 
     # If audio file uploaded, save it
@@ -153,7 +157,7 @@ async def simulate_voice(
     }
 
 @router.post("/scenario/{scenario_name}")
-async def trigger_scenario(scenario_name: str):
+async def trigger_scenario(scenario_name: str, request: Request):
     """
     Phase 5 demo helper:
     Triggers one of the 3 specified demo disaster scenarios:
@@ -161,6 +165,9 @@ async def trigger_scenario(scenario_name: str):
     - 'medical'
     - 'fire'
     """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    simulation_limiter.check(client_ip)
+
     key = scenario_name.lower().strip()
     if key not in SCENARIOS:
         return {"error": f"Scenario '{scenario_name}' not found. Available: flood, medical, fire"}

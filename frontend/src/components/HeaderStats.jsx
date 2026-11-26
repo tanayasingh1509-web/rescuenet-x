@@ -55,7 +55,7 @@ export default function HeaderStats({
           <button
             onClick={onOpenApiKeys}
             className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded bg-[#131b29] hover:bg-[#1a2538] border border-[#24334a] text-slate-200 hover:text-white transition font-medium focus-visible:ring-2 focus-visible:ring-blue-500"
-            title="Configure Google Gemini, Mapbox, and Twilio API Keys"
+            title="Configure API Keys (Gemini, Twilio, optional maps)"
             aria-label="Open API Keys modal"
           >
             <Key className="w-3.5 h-3.5 text-blue-400" />

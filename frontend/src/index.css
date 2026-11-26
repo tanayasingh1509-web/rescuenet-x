@@ -3,7 +3,6 @@
 @import "tailwindcss/utilities";
 
 @import "leaflet/dist/leaflet.css";
-@import "mapbox-gl/dist/mapbox-gl.css";
 
 /* CAD Custom Dark Scrollbar */
 ::-webkit-scrollbar {

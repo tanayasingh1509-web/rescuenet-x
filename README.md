@@ -12,7 +12,7 @@ During catastrophic events (floods, earthquakes, fires), commercial cellular int
 - **Traditional Telephony:** 2G/GSM feature phones via automated IVR DTMF menu + Speech-to-Text.
 - **Modern Digital Feeds:** YOLOv11 Computer Vision verified photo uploads + offline PWA mesh.
 - **Agentic Multi-Modal Dispatcher:** Perceptual hash image deduplication, spatial event clustering, urgency scoring, and automated nearest-unit routing.
-- **Tactical Command Dashboard:** Sub-50ms real-time GIS map with Mapbox GL JS and instant Leaflet/OpenStreetMap offline fallback.
+- **Tactical Command Dashboard:** Sub-50ms real-time GIS map with keyless Carto Dark and Esri World Imagery Satellite tiles (Leaflet), plus optional Google Maps Tactical Dark & Satellite support.
 
 **Triage Acceleration:** Cuts emergency triage and dispatch decision time from ~15 minutes to **< 3 seconds**.
 
@@ -39,7 +39,7 @@ AGENTIC DISPATCHER
         │
         ▼
 REAL-TIME COMMAND CENTER (<50ms via WebSockets)
- ├── React 19 + TailwindCSS + Google Maps / Leaflet (with offline SVG fallback)
+ ├── React 19 + TailwindCSS + Keyless Leaflet (Carto Dark + Esri Satellite) / Optional Google Maps
  └── 1-Click Dispatch Action with simulated automated SMS/Voice notification
 ```
 
@@ -47,11 +47,11 @@ REAL-TIME COMMAND CENTER (<50ms via WebSockets)
 |---|---|
 | **Backend** | FastAPI (Async, WebSockets, Python 3.11+) |
 | **Speech-to-Text** | OpenAI Whisper (Local PyTorch) with fast heuristic regex fallback |
-| **NLP Entity Extraction** | Google Gemini / Ollama Llama-3 with offline regex fallback |
+| **NLP Entity Extraction** | Google Gemini (default `gemini-3.8-flash` on Render) / Ollama Llama-3 (local-dev) with offline regex fallback |
 | **Computer Vision** | YOLO11n (`yolo11n.pt`, person counting) + color/edge spectrum heuristic (capped at 0.80) + optional Gemini vision |
 | **Image Deduplication** | 64-bit Perceptual Hashing (pHash via `imagehash`) + category + 30-min window |
 | **Agentic Dispatch** | State-flow agentic dispatcher (dedup node, urgency scoring node, Haversine routing node) |
-| **GIS & Mapping** | Google Maps (Tactical Dark & Satellite) + Carto Dark (Leaflet/OSM) + Mapbox Vector |
+| **GIS & Mapping** | Keyless Leaflet (Carto Dark + Esri World Imagery Satellite, 100% free with no keys required) + Optional Google Maps |
 | **Frontend** | React 19 + TailwindCSS + Lucide Icons + Web Audio API sound synthesis |
 | **Data Store** | SQLite persistence with async locking and fleet tracking |
 
@@ -134,11 +134,15 @@ The unified backend serves both the API and the React frontend at:
 - **API Documentation (Swagger UI):** `http://localhost:8000/docs`
 - **Real-Time WebSocket Endpoint:** `ws://localhost:8000/ws`
 
+### Demo Mode (`DEMO_MODE=true`)
+When `DEMO_MODE=true` (enabled by default on Render), visitors, evaluators, and hackathon judges can dispatch units, resolve incidents, and reset demo state without entering an operator token. Sensitive API-key configuration (`/api/config/*` and `.env` writes) always strictly requires an `ADMIN_TOKEN`.
+
 ### API Keys Configuration (`.env`)
-The platform works 100% offline out-of-the-box using local models (Whisper + Ollama/Heuristic regex + Leaflet Carto Dark tiles). You can enhance it with live cloud APIs:
-1. **Google Gemini API (`GEMINI_API_KEY`)**: Powers cloud-accelerated crisis extraction via Gemini 1.5 Flash.
-2. **Mapbox GL JS (`MAPBOX_ACCESS_TOKEN` / `VITE_MAPBOX_TOKEN`)**: Enables high-resolution dark vector map tiles.
+The platform works 100% offline out-of-the-box using local models (Whisper + Ollama/Heuristic regex + keyless Leaflet tiles: Carto Dark and Esri World Imagery). You can enhance it with live cloud APIs:
+1. **Google Gemini API (`GEMINI_API_KEY`)**: Powers cloud-accelerated crisis extraction via `gemini-3.8-flash`.
+2. **Google Maps API (`GOOGLE_MAPS_API_KEY` / `VITE_GOOGLE_MAPS_API_KEY`)**: Optional - the map works 100% without any key. Setting a key unlocks Google Maps Tactical Dark & Satellite vector views.
 3. **Twilio Telephony (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`)**: Powers live incoming 2G GSM phone calls.
+4. **Local Ollama & Whisper**: Local-dev offline fallbacks only (not used on Render).
 
 Keys can be added either by clicking **`[API Keys]`** in the dashboard header or by adding them to the `.env` file in the project root.
 
@@ -188,7 +192,7 @@ To receive real phone calls from any GSM mobile phone:
 | **Computer Vision** | **Live Hybrid** | YOLO11n (`yolo11n.pt`) is used specifically for person counting; color/edge heuristic provides weak triage hints (capped at 0.80, operator confirmation required); Gemini Vision optional for verified classification |
 | **Perceptual Hashing (pHash)** | **Live** | 64-bit image hash + Hamming distance + category match + 30-min window deduplication |
 | **Agentic Dispatcher** | **Live** | State-flow agentic dispatcher with urgency scoring, dynamic unit state allocation (AVAILABLE -> EN_ROUTE), and Haversine routing |
-| **GIS & Tactical Map** | **Live** | Google Maps (Tactical Dark & Satellite) with clean fallback to Leaflet / Carto Dark & Mapbox Vector |
+| **GIS & Tactical Map** | **Live** | Keyless Leaflet (Carto Dark & Esri World Imagery Satellite, 100% free) with optional Google Maps (Tactical Dark & Satellite) |
 | **Hazard Density Zones** | **Live** | Dynamic hazard radius circles reflecting incident severity |
 | **Twilio Telephony** | **Live-Ready / Simulated** | Real TwiML webhooks live when credentials + tunnel are provided; on-screen Phone Simulator for local testing |
 | **Citizen SOS PWA** | **Live** | Mobile-responsive PWA with geolocation gating, offline IndexedDB outbox, and auto-sync on reconnect |

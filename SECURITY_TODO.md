@@ -11,7 +11,7 @@ Follow these 4 mandatory steps immediately:
 
 ## 1. Delete and Rotate the Leaked Google Maps Key
 1. Go to the [Google Cloud Console Credentials Page](https://console.cloud.google.com/google/maps-apis/credentials).
-2. Locate the key starting with `AIzaSyAO...` that was exposed.
+2. Locate the exposed Google Maps API key.
 3. Click the **Delete** (Trash) icon to immediately revoke it and prevent unauthorized billing.
 4. Click **+ CREATE CREDENTIALS** -> **API key** to generate a brand new, clean key.
 

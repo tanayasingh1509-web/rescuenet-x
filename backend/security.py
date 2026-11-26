@@ -295,3 +295,4 @@ class InMemoryRateLimiter:
 # Rate limiters for public endpoints
 citizen_report_limiter = InMemoryRateLimiter(max_requests=30, window_seconds=60)
 voice_webhook_limiter = InMemoryRateLimiter(max_requests=60, window_seconds=60)
+simulation_limiter = InMemoryRateLimiter(max_requests=30, window_seconds=60)

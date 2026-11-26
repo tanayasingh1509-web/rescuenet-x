@@ -27,6 +27,29 @@ except ImportError:
 current_model_name = DEFAULT_WHISPER_MODEL
 stt_model = None
 
+def get_active_ai_tier() -> str:
+    """
+    Returns the active AI NLP extraction tier without exposing keys:
+    - 'gemini': if GEMINI_API_KEY is configured
+    - 'ollama': if OLLAMA_ENDPOINT is responsive (local dev only)
+    - 'heuristic': if offline rule-based heuristic is active
+    """
+    gemini_key = os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY
+    if gemini_key and len(gemini_key.strip()) > 5:
+        return "gemini"
+
+    endpoint = os.getenv("OLLAMA_ENDPOINT", OLLAMA_ENDPOINT)
+    if endpoint and not endpoint.startswith("http://disabled"):
+        try:
+            base_url = endpoint.rsplit("/api/", 1)[0]
+            resp = requests.get(base_url, timeout=0.3)
+            if resp.status_code == 200:
+                return "ollama"
+        except Exception:
+            pass
+
+    return "heuristic"
+
 def get_whisper_model(model_name: str = "base"):
     """Lazy loader for whisper models."""
     global stt_model, current_model_name
@@ -87,6 +110,7 @@ def extract_with_gemini(raw_text: str, api_key: str) -> Optional[dict]:
                     text = parts[0].get("text", "{}")
                     parsed = json.loads(text)
                     if isinstance(parsed, dict) and "category" in parsed:
+                        print(f"[AI TIER] Answered by Gemini ({active_model})")
                         return parsed
         else:
             print(f"[AI-ENGINE] Gemini API returned error ({response.status_code}): {response.text}")
@@ -314,13 +338,15 @@ TRANSCRIPT: "{raw_text}"
             "format": "json"
         }
         try:
-            response = requests.post(OLLAMA_ENDPOINT, json=payload, timeout=4)
+            # Short connect & read timeout so missing Ollama never slows requests on Render
+            response = requests.post(OLLAMA_ENDPOINT, json=payload, timeout=(1.5, 2.5))
             if response.status_code == 200:
                 resp_content = response.json().get("response", "{}")
                 candidate = json.loads(resp_content)
                 if isinstance(candidate, dict) and "category" in candidate:
                     parsed_json = candidate
                     extraction_source = "ollama"
+                    print(f"[AI TIER] Answered by Ollama ({OLLAMA_MODEL})")
         except Exception as e:
             print(f"[AI-ENGINE] Ollama unreachable ({e}). Using offline heuristic.")
 
@@ -328,6 +354,7 @@ TRANSCRIPT: "{raw_text}"
     if not parsed_json or not isinstance(parsed_json, dict) or "category" not in parsed_json:
         parsed_json = offline_heuristic_nlp_extractor(raw_text)
         extraction_source = "heuristic"
+        print("[AI TIER] Answered by Offline Heuristic")
 
     # 5. Clean, validate, and compute derived confidence and verified status
     cat = parsed_json.get("category", "UNKNOWN").upper()
