@@ -1,5 +1,6 @@
 // RESCUENET-X Offline Service Worker for Citizen PWA Mesh
-const CACHE_NAME = 'rescuenetx-pwa-v2';
+// Bump this on any SW strategy change so activate() wipes stale caches.
+const CACHE_NAME = 'rescuenetx-pwa-v3';
 
 const APP_SHELL = [
   '/',
@@ -41,7 +42,25 @@ self.addEventListener('fetch', (event) => {
   // Skip API mutations and WebSocket streams
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws')) return;
 
-  // Cache-first for local static assets, network-first for external/navigation
+  // Page navigations / index.html: NETWORK-FIRST so a new deploy is picked up
+  // immediately. (Cache-first here served a stale index.html pointing at old
+  // JS bundles, so fixes never reached users.) Cached copy is offline fallback only.
+  if (event.request.mode === 'navigate' || url.pathname === '/' || url.pathname === '/index.html') {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', responseClone));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match('/index.html'))
+    );
+    return;
+  }
+
+  // Cache-first for hashed static assets (filenames change every build), network fallback
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
