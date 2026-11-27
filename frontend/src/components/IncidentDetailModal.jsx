@@ -27,7 +27,9 @@ export default function IncidentDetailModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [event, onClose]);
 
-  if (!event) return null;
+  // Never render the dialog (and its full-screen black backdrop) for a missing
+  // or malformed event.
+  if (!event || !event.id) return null;
 
   const isCritical = event.severity >= 8;
   const isDispatched = event.status === 'DISPATCHED';

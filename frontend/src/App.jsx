@@ -300,13 +300,11 @@ export default function App() {
               : e
           )
         );
-        if (selectedEvent && selectedEvent.id === eventId) {
-          setSelectedEvent((prev) => ({
-            ...prev,
-            status: 'DISPATCHED',
-            assigned_unit: data.assigned_unit
-          }));
-        }
+        setSelectedEvent((prev) =>
+          prev && prev.id === eventId
+            ? { ...prev, status: 'DISPATCHED', assigned_unit: data.assigned_unit }
+            : prev
+        );
       }
     } catch (e) {
       console.error('Dispatch failed:', e);
@@ -328,9 +326,12 @@ export default function App() {
         setEvents((prev) =>
           prev.map((e) => (e.id === eventId ? { ...e, status: 'RESOLVED' } : e))
         );
-        if (selectedEvent && selectedEvent.id === eventId) {
-          setSelectedEvent((prev) => ({ ...prev, status: 'RESOLVED' }));
-        }
+        // Only patch the selection if it still points at this event. The modal
+        // may already have closed (selectedEvent === null); spreading null would
+        // create an id-less ghost event and re-open the modal as a black overlay.
+        setSelectedEvent((prev) =>
+          prev && prev.id === eventId ? { ...prev, status: 'RESOLVED' } : prev
+        );
       }
     } catch (e) {
       console.error('Resolve incident failed:', e);
